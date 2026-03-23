@@ -1,0 +1,36 @@
+2025-09-11 08:57:58.123 [INFO] [FotaService] Starting FOTA upgrade process for vehicle VIN: LSGXXXXXXXXX12345
+2025-09-11 08:57:58.456 [INFO] [FotaService] Upgrade plan: MCU(v2.1.0->v2.2.0), IPK(v3.0.1->v3.1.0), MPU(v1.5.0->v1.6.0)
+2025-09-11 08:57:58.789 [INFO] [HttpDownloadManager] Starting download: mcu_update.bin (45.2 MB)
+2025-09-11 08:58:12.001 [INFO] [HttpDownloadManager] download finish: mcu_update.bin
+2025-09-11 08:58:12.234 [INFO] [HttpDownloadManager] download successful: mcu_update.bin, verifyPackage: OK
+2025-09-11 08:58:15.567 [INFO] [HttpDownloadManager] Starting download: ipk_update.bin (128.7 MB)
+2025-09-11 08:59:01.890 [INFO] [HttpDownloadManager] download finish: ipk_update.bin
+2025-09-11 08:59:02.123 [INFO] [HttpDownloadManager] download successful: ipk_update.bin, verifyPackage: OK
+2025-09-11 08:57:10.007 [INFO] [FotaFlashImpl] MCU flash started
+2025-09-11 08:57:50.603 [INFO] [FotaFlashImpl] verify this package Successful: mcu_update.bin
+2025-09-11 08:57:50.624 [INFO] [FotaFlashImpl] DownloadSuccessful signal sent for MCU
+2025-09-11 08:57:10.023 [INFO] [FotaFlashImpl] IPK flash started
+2025-09-11 08:57:50.603 [INFO] [FotaFlashImpl] verify this package Successful: ipk_update.bin
+2025-09-11 08:57:50.624 [INFO] [FotaFlashImpl] DownloadSuccessful signal sent for IPK
+2025-09-11 09:01:55.000 [INFO] [HttpDownloadManager] Starting download: mpu_update.zip (2.077 GB)
+2025-09-11 09:01:55.234 [INFO] [HttpDownloadManager] download finish: mpu_update.zip
+2025-09-11 09:01:55.567 [WARN] [HttpDownloadManager] write file size = 0(0 B)
+2025-09-11 09:02:09.457 [ERROR] [FotaFlashImpl] verifyPackage: /data/fota/mpu_update.zip not exist
+2025-09-11 09:02:09.789 [ERROR] [iCGM] Package verification failed, triggering recovery
+2025-09-11 09:02:10.123 [WARN] [iCGM] FOTA state: DOWNLOADING -> VERIFY_FAILED
+2025-09-11 09:02:15.456 [INFO] [iCGM] Attempting recovery via usbReboot
+2025-09-11 09:03:05.789 [INFO] [FotaFlashImpl]-usbReboot initiated
+2025-09-11 09:03:05.890 [WARN] [FotaFlashImpl]-usbReboot USB device enumeration timeout (timeout=30000ms)
+2025-09-11 09:03:35.123 [INFO] [iCGM] System restarted, re-entering FOTA flow
+2025-09-11 09:03:35.456 [INFO] [HttpDownloadManager] Starting download: mpu_update.zip (2.077 GB) [retry=1]
+2025-09-11 09:05:48.789 [INFO] [HttpDownloadManager] download finish: mpu_update.zip
+2025-09-11 09:05:49.012 [WARN] [HttpDownloadManager] write file size = 0(0 B)
+2025-09-11 09:06:02.345 [ERROR] [FotaFlashImpl] verifyPackage: /data/fota/mpu_update.zip not exist
+2025-09-11 09:06:02.567 [ERROR] [iCGM] Package verification failed again, retry count: 2
+2025-09-11 09:06:10.890 [INFO] [FotaFlashImpl]-usbReboot initiated [retry=2]
+2025-09-11 09:06:40.123 [WARN] [FotaFlashImpl]-usbReboot USB device enumeration timeout (timeout=30000ms)
+2025-09-11 09:07:00.456 [ERROR] [iCGM] Entering download-verify-reboot loop, no max retry limit configured
+2025-09-11 09:07:00.789 [WARN] [FotaService] MCU status: FLASH_COMPLETE (waiting)
+2025-09-11 09:07:01.012 [WARN] [FotaService] IPK status: WAITING_FOR_COORDINATOR (iCGM)
+2025-09-11 09:07:01.234 [ERROR] [FotaService] iCGM status: FLASHING_IN_PROGRESS (stuck in loop)
+2025-09-11 09:07:01.456 [ERROR] [FotaService] Overall FOTA state: STALLED - coordinator (iCGM) unresponsive

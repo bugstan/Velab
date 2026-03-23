@@ -1,0 +1,41 @@
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Python 虚拟环境
+.venv/
+venv/
+backend/venv/
+
+# 密钥与本地环境（示例文件可提交）
+.env
+.env.local
+backend/.env
+web/.env
+web/.env.local
+!**/.env.example
+
+# Node / Next.js
+web/node_modules/
+web/.next/
+web/out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# 旧路径兼容
+apps/web/node_modules/
+
+# IDE（可选：若需共享 Cursor 规则可删掉下一行）
+.idea/
+
+# 本地大数据目录（按需调整）
+data/raw_logs/
+data/knowledge_base/
+data/jira_seed/
