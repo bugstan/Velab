@@ -6,7 +6,7 @@
 
 - `backend/` — Python API，见 `backend/.env.example`
 - `web/` — Next.js 前端，见 `web/README.md`
-- `data/` — 本地数据目录（已 `.gitignore`，需自行放置样本）
+- `data/`、`backend/data/` — 本地数据目录（已 `.gitignore`，日志与 mock 等需自行放置）
 
 ## 本地运行（简述）
 

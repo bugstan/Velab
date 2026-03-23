@@ -37,3 +37,4 @@ apps/web/node_modules/
 
 # 本地数据与样本（整目录不纳入版本库）
 data/
+backend/data/
