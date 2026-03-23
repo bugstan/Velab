@@ -6,7 +6,7 @@
 
 - `backend/` — Python API，见 `backend/.env.example`
 - `web/` — Next.js 前端，见 `web/README.md`
-- `data/samples/` — 可选样本资源
+- `data/` — 本地数据目录（已 `.gitignore`，需自行放置样本）
 
 ## 本地运行（简述）
 

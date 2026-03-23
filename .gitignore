@@ -35,7 +35,5 @@ apps/web/node_modules/
 # IDE（可选：若需共享 Cursor 规则可删掉下一行）
 .idea/
 
-# 本地大数据目录（按需调整）
-data/raw_logs/
-data/knowledge_base/
-data/jira_seed/
+# 本地数据与样本（整目录不纳入版本库）
+data/
