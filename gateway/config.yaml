@@ -1,0 +1,50 @@
+model_list:
+  # Claude 系列 (Primary)
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20240620
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  - model_name: claude-3-5-haiku
+    litellm_params:
+      model: anthropic/claude-3-5-haiku-20241022
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  # MiniMax 系列 (Velab 默认)
+  - model_name: minimax-m2-5
+    litellm_params:
+      model: minimax/abab6.5-chat
+      api_key: "os.environ/MINIMAX_API_KEY"
+      api_base: "https://api.minimax.io/v1"
+
+  # OpenAI 系列 (Fallback)
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+
+router_settings:
+  routing_strategy: latency-based-routing
+  enable_pre_call_checks: true
+  
+  # Fallback 策略配置
+  fallbacks:
+    - claude-3-5-sonnet: [gpt-4o, minimax-m2-5]
+    - claude-3-5-haiku: [gpt-4o-mini, minimax-m2-5]
+
+  # 重试逻辑
+  num_retries: 3
+  retry_after: 5
+  timeout: 600
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
