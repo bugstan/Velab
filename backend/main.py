@@ -1,4 +1,23 @@
-"""FastAPI server — SSE streaming endpoint for the diagnostic chat."""
+"""
+FOTA 智能诊断平台 — FastAPI 后端服务
+
+本模块是诊断平台的 HTTP 服务入口，提供基于 SSE（Server-Sent Events）的
+流式对话接口。主要功能包括：
+
+1. /chat 端点：接收用户诊断请求，通过 SSE 流式返回分析结果
+2. /health 端点：健康检查和 Agent 状态查询
+3. 全链路日志追踪：每个请求分配唯一 trace_id
+4. CORS 支持：允许前端跨域访问
+
+技术栈：
+- FastAPI: 异步 Web 框架
+- SSE (Server-Sent Events): 实时流式响应
+- sse-starlette: SSE 支持库
+
+作者：FOTA 诊断平台团队
+创建时间：2025
+最后更新：2025
+"""
 
 from __future__ import annotations
 
@@ -18,20 +37,24 @@ from common.chain_log import (
     setup_logging,
 )
 
-# Import agents so they self-register on module load
+# 导入 Agent 模块，触发自动注册
+# 这些导入语句会执行模块级代码，将 Agent 实例注册到全局 registry
 import agents.log_analytics  # noqa: F401
 import agents.jira_knowledge  # noqa: F401
 
 from agents.orchestrator import orchestrate
 
+# 初始化日志系统
 setup_logging()
 
-app = FastAPI(title="Maxus FOTA Diagnostic Backend")
+# 创建 FastAPI 应用实例
+app = FastAPI(title="FOTA 智能诊断平台")
 log = logging.getLogger(__name__)
 
+# 配置 CORS 中间件，允许前端跨域访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 生产环境应限制为具体域名
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -39,12 +62,42 @@ app.add_middleware(
 
 @app.post("/chat")
 async def chat(request: Request):
+    """
+    诊断对话接口（SSE 流式响应）
+    
+    接收用户的诊断问题，通过 Orchestrator 编排多个 Agent 进行分析，
+    并以 SSE 格式流式返回分析过程和最终结果。
+    
+    请求体格式：
+    {
+        "message": "用户的诊断问题",
+        "scenarioId": "场景 ID（如 fota-diagnostic）",
+        "history": [{"role": "user/assistant", "content": "..."}]  // 可选的对话历史
+    }
+    
+    响应格式（SSE 事件流）：
+    - step_start: Agent 开始执行
+    - step_progress: Agent 执行进度更新
+    - step_complete: Agent 执行完成
+    - content_start: 开始生成最终回复
+    - content_delta: 流式输出回复内容
+    - content_complete: 回复生成完成
+    - done: 整个流程结束
+    
+    Args:
+        request: FastAPI Request 对象
+    
+    Returns:
+        EventSourceResponse: SSE 流式响应
+    """
     body = await request.json()
     user_message: str = body.get("message", "")
     scenario_id: str = body.get("scenarioId", "fota-diagnostic")
     history: list[dict] = body.get("history", [])
 
     async def event_generator():
+        """SSE 事件生成器，负责流式推送诊断过程"""
+        # 为本次请求分配唯一的 trace_id，用于日志追踪
         trace_token = bind_trace_id(new_trace_id())
         t0 = time.perf_counter()
         chain_debug(
@@ -57,10 +110,12 @@ async def chat(request: Request):
         )
         event_count = 0
         try:
+            # 调用 Orchestrator 执行诊断流程，逐个 yield SSE 事件
             async for event in orchestrate(user_message, scenario_id, history):
                 event_count += 1
                 yield {"data": json.dumps(event, ensure_ascii=False)}
         finally:
+            # 记录请求完成日志
             chain_debug(
                 log,
                 step="http.chat",
@@ -68,6 +123,7 @@ async def chat(request: Request):
                 elapsed_ms=(time.perf_counter() - t0) * 1000,
                 events_emitted=event_count,
             )
+            # 清理 trace_id 上下文
             reset_trace_id(trace_token)
 
     return EventSourceResponse(event_generator())
@@ -75,6 +131,21 @@ async def chat(request: Request):
 
 @app.get("/health")
 async def health():
+    """
+    健康检查接口
+    
+    返回服务状态和已注册的 Agent 列表，用于监控和调试。
+    
+    Returns:
+        dict: 包含 status 和 agents 列表的字典
+            {
+                "status": "ok",
+                "agents": [
+                    {"name": "log_analytics", "display_name": "Log Analytics Agent"},
+                    ...
+                ]
+            }
+    """
     from agents.base import registry
     agents = [{"name": a.name, "display_name": a.display_name} for a in registry.all_agents()]
     return {"status": "ok", "agents": agents}
@@ -83,4 +154,5 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
+    # 开发模式：启用热重载
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

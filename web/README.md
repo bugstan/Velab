@@ -1,36 +1,332 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FOTA 智能诊断平台 - Web 前端
 
-## Getting Started
+基于 Next.js 14 构建的 FOTA 诊断平台前端应用，提供实时流式诊断交互界面。
 
-First, run the development server:
+---
+
+## 📋 目录结构
+
+```
+web/
+├── src/
+│   ├── app/                    # Next.js App Router
+│   │   ├── api/chat/          # API 路由（代理层）
+│   │   ├── page.tsx           # 主页面
+│   │   ├── layout.tsx         # 根布局
+│   │   └── globals.css        # 全局样式
+│   ├── components/            # React 组件
+│   │   ├── ChatMessage.tsx    # 消息组件
+│   │   ├── ThinkingProcess.tsx # 思考过程展示
+│   │   ├── InputBar.tsx       # 输入框
+│   │   ├── Header.tsx         # 页头
+│   │   ├── WelcomePage.tsx    # 欢迎页
+│   │   └── FeedbackButtons.tsx # 反馈按钮
+│   └── lib/                   # 工具库
+│       ├── types.ts           # TypeScript 类型定义
+│       └── sseParse.ts        # SSE 解析器
+├── public/                    # 静态资源
+├── package.json               # 依赖配置
+├── tsconfig.json              # TypeScript 配置
+├── next.config.ts             # Next.js 配置
+└── tailwind.config.ts         # Tailwind CSS 配置
+```
+
+---
+
+## 🚀 快速启动（开发环境）
+
+### 1. 安装依赖
+
+```bash
+npm install
+# 或
+yarn install
+# 或
+pnpm install
+```
+
+### 2. 配置环境变量
+
+```bash
+cp .env.example .env.local
+# 编辑 .env.local 文件，配置后端服务地址
+```
+
+`.env.local` 示例：
+```bash
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+BACKEND_URL=http://localhost:8000
+```
+
+### 3. 启动开发服务器
 
 ```bash
 npm run dev
-# or
+# 或
 yarn dev
-# or
+# 或
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+访问 [http://localhost:3000](http://localhost:3000) 查看应用。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 4. 构建生产版本
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm run start
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🏭 生产环境部署
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Vercel 部署（推荐）
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. 将代码推送到 GitHub
+2. 在 [Vercel](https://vercel.com) 导入项目
+3. 配置环境变量：
+   - `NEXT_PUBLIC_BACKEND_URL`: 后端 API 地址（公开）
+   - `BACKEND_URL`: 后端 API 地址（服务端）
+4. 部署
 
-## Deploy on Vercel
+### Docker 部署
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+# 构建镜像
+docker build -t fota-web .
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# 运行容器
+docker run -d -p 3000:3000 \
+  -e NEXT_PUBLIC_BACKEND_URL=https://api.example.com \
+  -e BACKEND_URL=https://api.example.com \
+  fota-web
+```
+
+### 传统服务器部署
+
+```bash
+# 构建
+npm run build
+
+# 使用 PM2 运行
+pm2 start npm --name "fota-web" -- start
+
+# 或使用 systemd
+sudo cp systemd/fota-web.service /etc/systemd/system/
+sudo systemctl enable fota-web
+sudo systemctl start fota-web
+```
+
+---
+
+## 🎨 核心功能
+
+### 1. 实时流式诊断
+
+- 基于 SSE (Server-Sent Events) 的实时数据流
+- 逐步展示 Agent 执行过程（Thinking Process）
+- 流式输出最终诊断结果
+
+### 2. 多场景支持
+
+- FOTA 诊断
+- Jira 工单检索
+- 车队分析
+- CES 演示
+- 数据采集
+
+### 3. 交互体验
+
+- Markdown 格式渲染（标题、列表、代码块、表格）
+- 流式输出光标动画
+- 可折叠的思考过程
+- 反馈按钮（点赞/点踩）
+- 自动滚动到最新消息
+
+### 4. 响应式设计
+
+- 支持桌面和移动设备
+- 深色主题（基于 CSS 变量）
+- 流畅的动画效果
+
+---
+
+## 🔧 开发指南
+
+### 技术栈
+
+- **框架**: Next.js 14 (App Router)
+- **语言**: TypeScript
+- **样式**: Tailwind CSS + CSS Variables
+- **状态管理**: React Hooks
+- **实时通信**: SSE (Server-Sent Events)
+
+### 项目特点
+
+1. **轻量级 Markdown 渲染器**
+   - 无需外部库，自实现常见 Markdown 语法
+   - 支持标题、列表、代码块、表格等
+
+2. **SSE 流式处理**
+   - 自定义 SSE 解析器
+   - 支持增量更新和状态管理
+
+3. **主题系统**
+   - 基于 CSS 变量的主题切换
+   - 易于扩展和定制
+
+### 添加新组件
+
+```typescript
+// src/components/MyComponent.tsx
+"use client";
+
+import { useState } from "react";
+
+export default function MyComponent() {
+  const [state, setState] = useState("");
+  
+  return (
+    <div className="p-4">
+      {/* 组件内容 */}
+    </div>
+  );
+}
+```
+
+### 修改主题
+
+编辑 `src/app/globals.css` 中的 CSS 变量：
+
+```css
+:root {
+  --bg-primary: #0a0a0a;
+  --text-primary: #e5e5e5;
+  --accent-red: #ef4444;
+  /* ... */
+}
+```
+
+---
+
+## 📊 性能优化
+
+### 已实施的优化
+
+1. **代码分割**
+   - 按路由自动分割
+   - 组件懒加载
+
+2. **图片优化**
+   - Next.js Image 组件
+   - 自动格式转换和压缩
+
+3. **字体优化**
+   - next/font 自动优化
+   - 字体子集化
+
+### 建议的优化
+
+1. **虚拟滚动**
+   - 对长对话历史使用虚拟列表
+   - 减少 DOM 节点数量
+
+2. **缓存策略**
+   - 使用 SWR 或 React Query
+   - 缓存常见问题的响应
+
+3. **SSE 缓冲优化**
+   - 批量处理 SSE 事件
+   - 减少状态更新频率
+
+---
+
+## 🧪 测试
+
+### 运行测试
+
+```bash
+npm test
+# 或
+yarn test
+```
+
+### 端到端测试
+
+```bash
+npm run test:e2e
+# 或
+yarn test:e2e
+```
+
+---
+
+## 🔗 相关文档
+
+- [Next.js 文档](https://nextjs.org/docs)
+- [Tailwind CSS 文档](https://tailwindcss.com/docs)
+- [TypeScript 文档](https://www.typescriptlang.org/docs)
+- [项目完整文档](../claude.md)
+- [后端 API 文档](../backend/README.md)
+
+---
+
+## 📝 核心特性
+
+- ✅ **实时流式响应**: 基于 SSE 的实时诊断过程展示
+- ✅ **多场景支持**: 支持多种诊断场景切换
+- ✅ **Markdown 渲染**: 轻量级 Markdown 解析器
+- ✅ **响应式设计**: 支持桌面和移动设备
+- ✅ **主题系统**: 基于 CSS 变量的深色主题
+- ✅ **TypeScript**: 完整的类型安全
+
+---
+
+## 🚨 故障排查
+
+### 问题 1：无法连接后端
+
+```bash
+# 检查环境变量
+cat .env.local
+
+# 检查后端服务是否运行
+curl http://localhost:8000/health
+
+# 检查 CORS 配置
+# 确保后端允许前端域名访问
+```
+
+### 问题 2：SSE 连接中断
+
+```bash
+# 检查网络连接
+# 检查后端日志
+# 确认超时配置（默认 120 秒）
+```
+
+### 问题 3：样式不生效
+
+```bash
+# 清除 Next.js 缓存
+rm -rf .next
+
+# 重新构建
+npm run build
+```
+
+---
+
+## 📞 技术支持
+
+如有问题，请查看：
+1. 本 README 的故障排查章节
+2. [项目完整文档](../claude.md)
+3. Next.js 官方文档
+
+---
+
+**项目状态**: 🚧 开发中  
+**最后更新**: 2026-04-02  
+**维护团队**: FOTA 诊断平台团队

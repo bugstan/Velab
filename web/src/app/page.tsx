@@ -1,3 +1,23 @@
+/**
+ * FOTA 诊断平台 — 主页面组件
+ *
+ * 这是应用的核心页面，实现了完整的诊断对话流程：
+ * 1. 场景选择：支持多种诊断场景切换
+ * 2. 消息管理：维护用户和助手的对话历史
+ * 3. SSE 流式处理：实时接收和展示诊断过程
+ * 4. 状态管理：处理加载、流式输出、错误等状态
+ *
+ * 主要功能：
+ * - 实时流式显示 Agent 执行过程（Thinking Process）
+ * - 支持中断正在进行的诊断
+ * - 自动滚动到最新消息
+ * - 场景切换时清空对话历史
+ *
+ * @author FOTA 诊断平台团队
+ * @created 2025
+ * @updated 2025
+ */
+
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -13,21 +33,32 @@ import {
 } from "@/lib/types";
 import { parseSSEBuffer } from "@/lib/sseParse";
 
+// 后端服务地址配置
 const BACKEND_URL =
   (typeof process !== "undefined" &&
     process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "")) ||
   "http://localhost:8000";
 
+/**
+ * SSE 事件载荷类型定义
+ *
+ * 定义了后端通过 SSE 推送的各种事件类型
+ */
 type SsePayload = {
-  type: string;
-  step?: AgentStep;
-  stepNumber?: number;
-  partialResult?: string;
-  content?: string;
-  sources?: ChatMessage["sources"];
-  confidenceLevel?: ChatMessage["confidenceLevel"];
+  type: string;  // 事件类型：step_start | step_complete | content_delta 等
+  step?: AgentStep;  // Agent 步骤信息
+  stepNumber?: number;  // 步骤编号
+  partialResult?: string;  // 部分结果（用于进度更新）
+  content?: string;  // 内容增量
+  sources?: ChatMessage["sources"];  // 引用来源
+  confidenceLevel?: ChatMessage["confidenceLevel"];  // 置信度
 };
 
+/**
+ * 主页面组件
+ *
+ * 管理整个诊断对话的状态和交互逻辑
+ */
 export default function Home() {
   const [currentScenario, setCurrentScenario] = useState<DemoScenario>(
     DEMO_SCENARIOS[0]

@@ -1,4 +1,4 @@
-"""Orchestrator — uses MiniMax LLM with function calling to route to agents."""
+"""Orchestrator — uses LLM with function calling to route to agents."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from typing import AsyncIterator
 
 from agents.base import AgentResult, registry
 from common.chain_log import async_step_timer, chain_debug
-from config import MINIMAX_ORCHESTRATOR_STREAM, SCENARIO_AGENT_MAP
-from services.llm import chat_completion, parse_tool_calls
+from config import settings, SCENARIO_AGENT_MAP
+from services.llm import chat_completion, chat_completion_stream, parse_tool_calls
 
 log = logging.getLogger(__name__)
 
@@ -62,22 +62,6 @@ _THINKING_UI_FALLBACK = (
     "已识别为寒暄或信息不足，未调用诊断 Agent；正在引导用户补充可诊断信息（现象、ECU、错误码或日志）。"
 )
 
-_BT = chr(96)
-_THINK_OPEN = _BT + "think" + _BT
-_THINK_CLOSE = _BT + "/think" + _BT
-
-
-def _strip_think_xml_blocks(text: str) -> str:
-    """去掉 `...` 与 `...` 段（与 llm 流式一致）。"""
-    t = text
-    while _THINK_OPEN in t:
-        i = t.index(_THINK_OPEN)
-        j = t.find(_THINK_CLOSE, i)
-        if j == -1:
-            t = t[:i]
-            break
-        t = t[:i] + t[j + len(_THINK_CLOSE) :]
-    return t.strip()
 
 
 def _thinking_leaks_detected(text: str) -> bool:
@@ -95,9 +79,7 @@ def _thinking_leaks_detected(text: str) -> bool:
 
 def _thinking_for_step_ui(candidate: str) -> str:
     """Parallel Orchestrator 的 Step 1 result：短、可读、无规则复述。"""
-    t = _strip_think_xml_blocks(candidate).strip()
-    if _THINK_CLOSE in t:
-        t = t.split(_THINK_CLOSE)[-1].strip()
+    t = candidate.strip()
     if not t:
         return _THINKING_UI_FALLBACK
     if _thinking_leaks_detected(t):
@@ -114,9 +96,6 @@ def _raw_orchestrator_content(llm_message) -> str:
     text = (getattr(llm_message, "content", None) or "").strip()
     if not text:
         return ""
-    text = _strip_think_xml_blocks(text)
-    if _THINK_CLOSE in text:
-        text = text.split(_THINK_CLOSE)[-1].strip()
     return text
 
 
@@ -189,7 +168,7 @@ def _split_clarification_output(raw: str) -> tuple[str, str]:
 
 def _heuristic_user_visible_only(text: str) -> str:
     """Try to keep only the greeting/help block for the main chat area."""
-    t = _strip_think_xml_blocks(text.strip())
+    t = text.strip()
     # Start from first line that looks like user-facing assistant reply
     m = re.search(
         r"(?m)^\s*(晚上好|下午好|早上好|中午好|您好|你好|谢谢|哈喽|嗨|Hi[，,\s]|Hello[，,\s])",
@@ -324,7 +303,8 @@ async def orchestrate(
         llm_response = await chat_completion(
             messages,
             tools=tools_schema,
-            stream=MINIMAX_ORCHESTRATOR_STREAM,
+            stream=settings.ORCHESTRATOR_STREAM,
+            model="router-model",
         )
         tool_calls = parse_tool_calls(llm_response)
         chain_debug(
@@ -577,7 +557,6 @@ async def generate_final_response(
         },
     ]
 
-    from services.llm import chat_completion_stream
 
     try:
         accumulated = ""
