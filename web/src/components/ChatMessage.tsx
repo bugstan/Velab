@@ -1,24 +1,66 @@
+/**
+ * FOTA 诊断平台 — 聊天消息组件
+ *
+ * 负责渲染单条聊天消息，支持：
+ * 1. 用户消息和助手消息的不同样式
+ * 2. Markdown 格式渲染（标题、列表、代码块、表格等）
+ * 3. Thinking Process 展示（Agent 执行过程）
+ * 4. 流式输出动画效果
+ * 5. 反馈按钮（点赞/点踩）
+ *
+ * 设计特点：
+ * - 轻量级 Markdown 解析器（无需外部库）
+ * - 支持自定义 CSS 变量主题
+ * - 流式输出时显示光标动画
+ *
+ * @author FOTA 诊断平台团队
+ * @created 2025
+ * @updated 2025
+ */
+
 "use client";
 
 import { ChatMessage as ChatMessageType } from "@/lib/types";
 import ThinkingProcess from "./ThinkingProcess";
 import FeedbackButtons from "./FeedbackButtons";
 
+/**
+ * 组件属性接口
+ */
 interface ChatMessageProps {
-  message: ChatMessageType;
+  message: ChatMessageType;  // 消息对象，包含角色、内容、思考过程等
 }
 
+/**
+ * 简易 Markdown 渲染器
+ *
+ * 将 Markdown 文本转换为 HTML，支持常见的 Markdown 语法：
+ * - 标题（## 和 ###）
+ * - 分隔线（---）
+ * - 粗体（**text**）
+ * - 行内代码（`code`）
+ * - 链接（[text](url)）
+ * - 表格
+ * - 代码块（```code```）
+ * - 有序列表和无序列表
+ *
+ * @param content - Markdown 格式的文本
+ * @returns HTML 字符串
+ */
 function renderMarkdown(content: string): string {
   let html = content;
 
+  // 渲染标题
   html = html.replace(/^### (.+)$/gm, '<h3 class="text-sm font-semibold mt-4 mb-2" style="color: var(--text-primary)">$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2 class="text-base font-semibold mt-5 mb-2" style="color: var(--text-primary)">$1</h2>');
 
+  // 渲染分隔线
   html = html.replace(/^---$/gm, '<hr class="my-4" style="border-color: var(--border-light)" />');
 
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:underline">$1</a>');
+  // 渲染行内格式
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');  // 粗体
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');  // 行内代码
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:underline">$1</a>');  // 链接
 
   html = html.replace(/^(\| .+)$/gm, (match) => {
     if (match.match(/^\|\s*[-:]+/)) return "";

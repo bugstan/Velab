@@ -1,40 +1,185 @@
-.DS_Store
-.pytest_cache/
+# ============================================================
+# FOTA 智能诊断平台 - Git 忽略配置
+# ============================================================
+
+# ── Python ──
 __pycache__/
 *.py[cod]
 *$py.class
-*.egg-info/
-.eggs/
-dist/
+*.so
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Python 虚拟环境
-.venv/
+# ── 虚拟环境 ──
 venv/
-backend/venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
 
-# 密钥与本地环境（示例文件可提交）
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── 环境变量（敏感信息）──
 .env
 .env.local
-backend/.env
-web/.env
-web/.env.local
-!**/.env.example
+.env.*.local
+*.env
+!.env.example
 
-# Node / Next.js
-web/node_modules/
-web/.next/
-web/out/
-.turbo/
-*.tsbuildinfo
-next-env.d.ts
+# ── 日志文件 ──
+*.log
+logs/
+*.log.*
 
-# 旧路径兼容
-apps/web/node_modules/
-
-# IDE（可选：若需共享 Cursor 规则可删掉下一行）
-.idea/
-
-# 本地数据与样本（整目录不纳入版本库）
+# ── 数据文件 ──
 data/
-backend/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── 临时文件 ──
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# ── 测试覆盖率 ──
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# ── Jupyter Notebook ──
+.ipynb_checkpoints
+*.ipynb
+
+# ── Node.js（前端）──
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.next/
+out/
+.nuxt/
+dist/
+.cache/
+
+# ── 构建产物 ──
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── 操作系统 ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── 部署相关 ──
+# 保留部署脚本和配置文件，但忽略部署生成的文件
+*.pid
+*.sock
+
+# ── 备份文件 ──
+*.bak
+*.backup
+*.old
+*~
+
+# ── 敏感数据 ──
+# API Keys、密钥、证书等
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# ── 大文件 ──
+# 原始日志包、数据集等
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+*.dlt
+# 但保留文档中的示例压缩包
+!docs/**/*.zip
+!docs/**/*.tar.gz
+
+# ── 特定目录 ──
+# 对象存储本地缓存
+minio-data/
+s3-cache/
+
+# PostgreSQL 数据目录
+postgres-data/
+
+# Redis 数据目录
+redis-data/
+
+# 日志归档
+Log/
+log/
+
+# ── 项目特定 ──
+# 旧版部署脚本备份
+scripts/deploy-old.sh.bak
+scripts/*.bak
+
+# 测试数据
+test-data/
+test-logs/
+
+# 临时分析结果
+analysis-output/
+reports/
+
+# AI 助手生成的项目文档（自动生成，不纳入版本控制）
+# claude.md - 项目完整文档，纳入版本控制
+cursor.md
+*.ai.md
+
+# ── 保留的文件（明确不忽略）──
+# 确保这些重要文件被提交
+!.env.example
+!backend/.env.example
+!gateway/.env.example
+!README.md
+!*/README.md
+!docs/**/*.md
+!*.example

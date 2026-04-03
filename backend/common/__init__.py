@@ -15,7 +15,14 @@ from common.chain_log import (
     sync_step_timer,
 )
 
+from common.redaction import (
+    SENSITIVE_PATTERNS,
+    redact_sensitive_info,
+    sensitive_redactor,
+)
+
 __all__ = [
+    # chain_log
     "ChainLogFormat",
     "async_step_timer",
     "bind_trace_id",
@@ -28,4 +35,8 @@ __all__ = [
     "reset_trace_id",
     "setup_logging",
     "sync_step_timer",
+    # redaction
+    "SENSITIVE_PATTERNS",
+    "redact_sensitive_info",
+    "sensitive_redactor",
 ]

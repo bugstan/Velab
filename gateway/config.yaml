@@ -1,0 +1,117 @@
+# ============================================================
+# FOTA 智能诊断平台 - LiteLLM Gateway 配置
+# ============================================================
+# 适配美国 CN2 GIA 服务器，pip + systemd 原生部署
+# 不依赖 PostgreSQL 和 Redis（核心功能无需数据库）
+
+model_list:
+  # ============================================================
+  # 意图路由层（§5）— 快速、低成本
+  # ============================================================
+  - model_name: router-model
+    litellm_params:
+      model: anthropic/claude-3-5-haiku-20241022
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 1024
+    model_info:
+      description: "意图路由 — Claude Haiku 主力"
+
+  - model_name: router-model                    # 同名 = 自动负载均衡 + Fallback
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+      max_tokens: 1024
+    model_info:
+      description: "意图路由 — OpenAI Fallback"
+
+  # ============================================================
+  # Agent 层（§8.1~8.3）— 长上下文 + Tool Use
+  # Key Pool：同一模型挂多个 Key 实现轮转（§10 429 防御）
+  # ============================================================
+  - model_name: agent-model
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: os.environ/ANTHROPIC_API_KEY_1
+      rpm: 50                                    # 单 Key RPM 限制
+      tpm: 400000                                # 单 Key TPM 限制
+    model_info:
+      description: "Agent — Claude Sonnet Key#1"
+
+  - model_name: agent-model
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: os.environ/ANTHROPIC_API_KEY_2
+      rpm: 50
+      tpm: 400000
+    model_info:
+      description: "Agent — Claude Sonnet Key#2"
+
+  - model_name: agent-model
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+      rpm: 500
+      tpm: 2000000
+    model_info:
+      description: "Agent — OpenAI Fallback"
+
+  # ============================================================
+  # Synthesizer 层（§8.4）— 深度推理
+  # ============================================================
+  - model_name: synthesizer-model
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: os.environ/ANTHROPIC_API_KEY_1
+    model_info:
+      description: "Synthesizer — Claude Sonnet 主力"
+
+  - model_name: synthesizer-model
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      description: "Synthesizer — OpenAI Fallback"
+
+  # ============================================================
+  # Embedding 层（§2 离线预处理）
+  # ============================================================
+  - model_name: embedding-model
+    litellm_params:
+      model: openai/text-embedding-3-large
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      description: "Embedding — OpenAI text-embedding-3-large"
+
+# ============================================================
+# LiteLLM 全局设置
+# ============================================================
+litellm_settings:
+  # 重试与 Fallback（对应方案 v6 §10 429 防御方案的前 4 层）
+  num_retries: 3                                # 同一 deployment 重试次数
+  request_timeout: 120                          # 单次请求超时
+
+  # Fallback 链：同一 model_name 下的多个 deployment 自动 Fallback
+  # Claude deployment 失败 → 自动切到同 model_name 下的 OpenAI deployment
+  fallbacks:
+    - {"router-model": ["router-model"]}
+    - {"agent-model": ["agent-model"]}
+    - {"synthesizer-model": ["synthesizer-model"]}
+
+  allowed_fails: 3                              # 连续失败 3 次后临时移除该 deployment
+  cooldown_time: 60                             # 移除后冷却 60 秒再重试
+
+  # 日志
+  success_callback: ["prometheus"]              # Prometheus 指标采集（可选）
+  failure_callback: ["prometheus"]
+
+# ============================================================
+# 路由策略
+# ============================================================
+router_settings:
+  routing_strategy: usage-based-routing         # 按使用量均衡分配到各 Key
+
+# ============================================================
+# 网关设置
+# ============================================================
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY     # 管理员 Key
