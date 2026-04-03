@@ -6,7 +6,12 @@
 ## 技术栈
 - **后端 (Backend)**: Python 3.12, FastAPI (异步), Pydantic 2, OpenAI SDK, SSE-Starlette.
 - **前端 (Frontend)**: Next.js 16 (App Router), React 19, Tailwind CSS 4, TypeScript 6.
-- **测试**: 后端 - Pytest; 前端 - Vitest 4, ESLint 9.
+- **测试**:
+  - 后端 - Pytest
+  - 前端 - Vitest 4.1.2, @vitest/coverage-v8, @vitest/ui
+  - 测试库 - @testing-library/react 16.3.2, @testing-library/jest-dom 6.9.1
+  - API Mock - MSW 2.12.14
+  - Lint - ESLint 9
 
 ## 核心架构 & 文件夹说明
 - `backend/`: FastAPI 后端核心。
@@ -28,7 +33,11 @@
 ### 前端
 - **安装**: `npm install`
 - **启动**: `npm run dev` (URL: http://localhost:3000)
-- **测试**: `npm run test`
+- **测试**:
+  - `npm test` - 运行所有测试
+  - `npm run test:watch` - 监听模式
+  - `npm run test:coverage` - 生成覆盖率报告
+  - `npm run test:ui` - 可视化测试界面
 - **检查**: `npm run lint`
 
 ## 编码与设计规范

@@ -51,6 +51,17 @@
   - [x] 全面代码审核（语法、类型、逻辑检查）
   - [x] 脚本环境检查和提示完善性审核
 
+- [x] **前端测试框架完善 (2026-04-03 新增)**
+  - [x] 配置 Vitest 4.1.2 测试框架
+  - [x] 配置 React Testing Library 16.3.2
+  - [x] 配置 MSW 2.12.14 用于 API 模拟
+  - [x] 添加所有组件测试（ChatMessage, ThinkingProcess, InputBar, Header, WelcomePage, FeedbackButtons）
+  - [x] 添加集成测试（page.tsx）
+  - [x] 添加 API 路由测试（/api/chat）
+  - [x] 配置测试覆盖率目标（分支≥70%, 函数≥70%, 行≥80%, 语句≥80%）
+  - [x] 创建完整测试文档 `web/README_TESTING.md`
+  - [x] 更新文档以反映测试框架变更
+
 ---
 
 ## 🚧 进行中任务

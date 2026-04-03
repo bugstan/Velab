@@ -190,14 +190,16 @@ open http://localhost:8000/docs
 
 | 层次 | 技术 |
 |------|------|
-| 后端框架 | Python + FastAPI |
+| 后端框架 | Python 3.12 + FastAPI |
 | AI 编排 | 纯 Python async + LangChain Tool 抽象 |
 | LLM 供应商 | Claude（主力）+ OpenAI（Fallback + Embedding） |
 | 任务队列 | Arq（原生 async/await） |
 | 数据库 | PostgreSQL + pgvector |
 | 对象存储 | MinIO / S3 |
 | 缓存 | Redis |
-| 前端 | Next.js + React + TypeScript |
+| 前端框架 | Next.js 16 + React 19 + TypeScript 6 |
+| 前端样式 | Tailwind CSS 4 |
+| 前端测试 | Vitest 4.1 + React Testing Library 16.3 + MSW 2.12 |
 | 服务部署 | Python Virtualenv + Systemd（反 Docker） |
 
 ---

@@ -6,18 +6,20 @@
 
 ## 测试技术栈
 
-- **测试框架**: Jest 30.x
-- **组件测试**: React Testing Library 16.x
-- **API 模拟**: MSW (Mock Service Worker) 2.x
-- **用户交互**: @testing-library/user-event 14.x
-- **类型支持**: TypeScript 5.x
+- **测试框架**: Vitest 4.1.2
+- **组件测试**: React Testing Library 16.3.2
+- **API 模拟**: MSW (Mock Service Worker) 2.12.14
+- **用户交互**: @testing-library/user-event 14.6.1
+- **覆盖率工具**: @vitest/coverage-v8 4.1.2
+- **可视化界面**: @vitest/ui 4.1.2
+- **类型支持**: TypeScript 6.0.2
 
 ## 项目结构
 
 ```
 web/
-├── jest.config.js              # Jest 配置文件
-├── jest.setup.js               # Jest 设置文件
+├── vitest.config.ts            # Vitest 配置文件
+├── vitest.setup.ts             # Vitest 设置文件
 ├── src/
 │   ├── __tests__/              # 测试工具和 Mock
 │   │   ├── mocks/
@@ -64,9 +66,9 @@ npm run test:watch
 npm run test:coverage
 ```
 
-### CI 环境测试
+### 可视化测试界面
 ```bash
-npm run test:ci
+npm run test:ui
 ```
 
 ## 测试覆盖率
@@ -243,9 +245,9 @@ jest.mock('@/components/ComplexComponent', () => ({
 
 ### 3. 环境变量
 
-在 `jest.setup.js` 中配置测试环境变量：
+在 [`vitest.setup.ts`](vitest.setup.ts:1) 中配置测试环境变量：
 
-```javascript
+```typescript
 process.env.NEXT_PUBLIC_BACKEND_URL = 'http://localhost:8000'
 ```
 
@@ -388,7 +390,7 @@ describe('组件名称', () => {
 
 ## 参考资源
 
-- [Jest 官方文档](https://jestjs.io/)
+- [Vitest 官方文档](https://vitest.dev/)
 - [React Testing Library 文档](https://testing-library.com/react)
 - [MSW 文档](https://mswjs.io/)
 - [Testing Library 最佳实践](https://kentcdodds.com/blog/common-mistakes-with-react-testing-library)
