@@ -364,6 +364,48 @@ class BatchOperations:
         
         result = await session.execute(stmt)
         return result.scalars().all()
+    
+    @staticmethod
+    def bulk_update_event_timestamps(
+        session: Session,
+        updates: List[Dict[str, Any]],
+        batch_size: int = 1000
+    ) -> int:
+        """
+        批量更新事件的normalized_ts
+        
+        Args:
+            session: 数据库会话
+            updates: 更新数据列表，每项包含 event_id 和 normalized_ts
+            batch_size: 每批次大小
+        
+        Returns:
+            int: 更新的事件数量
+        """
+        if not updates:
+            return 0
+        
+        total_updated = 0
+        
+        try:
+            for i in range(0, len(updates), batch_size):
+                batch = updates[i:i + batch_size]
+                
+                # 使用bulk_update_mappings提高性能
+                session.bulk_update_mappings(DiagnosisEvent, batch)
+                total_updated += len(batch)
+                
+                logger.debug(f"批量更新时间戳: {len(batch)}条 (总计: {total_updated}/{len(updates)})")
+            
+            session.commit()
+            logger.info(f"成功批量更新 {total_updated} 条事件时间戳")
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"批量更新时间戳失败: {e}")
+            raise
+        
+        return total_updated
 
 
 # 便捷函数

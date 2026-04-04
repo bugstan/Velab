@@ -61,17 +61,27 @@ app = FastAPI(
 )
 log = logging.getLogger(__name__)
 
-# 初始化数据库连接池
+# 初始化数据库连接池和任务客户端
 @app.on_event("startup")
 async def startup_event():
-    """应用启动时初始化数据库连接池"""
+    """应用启动时初始化数据库连接池和任务客户端"""
     log.info("Initializing database connection pool...")
     db_manager.initialize()
     log.info("Database connection pool initialized")
+    
+    log.info("Initializing task client...")
+    from tasks.client import get_task_client
+    await get_task_client()
+    log.info("Task client initialized")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """应用关闭时清理数据库连接"""
+    """应用关闭时清理数据库连接和任务客户端"""
+    log.info("Closing task client...")
+    from tasks.client import close_task_client
+    await close_task_client()
+    log.info("Task client closed")
+    
     log.info("Closing database connections...")
     db_manager.close()
     log.info("Database connections closed")
