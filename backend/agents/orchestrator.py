@@ -611,7 +611,7 @@ async def generate_final_response(
         accumulated = ""
         async for delta in chat_completion_stream(messages, max_tokens=4096):
             accumulated += delta
-            yield {"type": "content_delta", "content": accumulated}
+            yield {"type": "content_delta", "content": delta}
         chain_debug(
             log,
             step="response_generator",
@@ -628,13 +628,16 @@ async def generate_final_response(
         )
         log.exception("[ResponseGenerator] LLM unavailable, using template fallback")
         content = _build_fallback_response(user_message, agent_results)
-        # Stream the fallback content in chunks
-        accumulated = ""
-        for i in range(0, len(content), 30):
-            accumulated = content[: i + 30]
-            yield {"type": "content_delta", "content": accumulated}
-            import asyncio as _aio
-            await _aio.sleep(0.02)
+        # Stream the fallback content by lines to preserve formatting
+        lines = content.split('\n')
+        for line in lines:
+            if line.strip():  # Only send non-empty lines
+                yield {"type": "content_delta", "content": line + '\n'}
+                import asyncio as _aio
+                await _aio.sleep(0.01)
+            else:
+                # Send empty lines to preserve paragraph breaks
+                yield {"type": "content_delta", "content": '\n'}
 
 
 RESPONSE_GENERATOR_PROMPT = """你是一个车辆 FOTA 诊断助手（角色: Technician）。

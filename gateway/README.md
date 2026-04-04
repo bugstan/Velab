@@ -11,12 +11,15 @@ gateway/
 ├── config.yaml              # LiteLLM 模型路由配置
 ├── .env.example             # 环境变量配置示例
 ├── README.md                # 本文档
+├── gateway功能检查报告.md    # 功能完成度报告
 ├── systemd/
 │   └── litellm.service      # systemd 服务配置
 ├── nginx/
 │   └── litellm.conf         # Nginx 反向代理配置
 └── scripts/
-    └── start.sh             # 开发环境启动脚本
+    ├── start.sh             # 开发环境启动脚本
+    ├── deploy.sh            # 生产环境自动部署脚本
+    └── validate_config.sh   # 配置验证脚本
 ```
 
 ---
@@ -36,7 +39,18 @@ cp .env.example .env
 # 编辑 .env 文件，填入真实的 API Keys
 ```
 
-### 3. 启动服务
+### 3. 验证配置（可选但推荐）
+
+```bash
+# 运行配置验证脚本
+chmod +x scripts/validate_config.sh
+./scripts/validate_config.sh
+
+# 验证通过后会显示：
+# ✓ 配置验证通过，可以启动服务
+```
+
+### 4. 启动服务
 
 **方式 A：使用启动脚本（推荐）**
 ```bash
@@ -49,7 +63,7 @@ chmod +x scripts/start.sh
 litellm --config config.yaml --port 4000
 ```
 
-### 4. 验证服务
+### 5. 验证服务
 
 ```bash
 # 健康检查
@@ -69,7 +83,41 @@ curl http://localhost:4000/v1/chat/completions \
 
 ## 🏭 生产环境部署
 
-### 前置准备
+### 方式 A：自动部署（推荐）
+
+使用 [`deploy.sh`](scripts/deploy.sh) 脚本一键部署：
+
+```bash
+# 1. 进入 gateway 目录
+cd gateway
+
+# 2. 运行部署脚本
+sudo ./scripts/deploy.sh
+
+# 3. 编辑配置文件，填入真实 API Keys
+sudo nano /opt/litellm-proxy/.env
+
+# 4. 启动服务
+sudo systemctl start litellm
+
+# 5. 查看状态
+sudo systemctl status litellm
+```
+
+**deploy.sh 自动完成的操作**：
+- ✅ 检查系统依赖（Python3）
+- ✅ 创建专用用户 `litellm`
+- ✅ 创建部署目录 `/opt/litellm-proxy`
+- ✅ 配置 Python 虚拟环境
+- ✅ 安装 LiteLLM
+- ✅ 复制配置文件
+- ✅ 安装 systemd 服务
+
+---
+
+### 方式 B：手动部署
+
+#### 前置准备
 
 1. **服务器要求**
    - 操作系统：Linux（推荐 Ubuntu 22.04 / Debian 12）
@@ -81,7 +129,7 @@ curl http://localhost:4000/v1/chat/completions \
    - 准备一个域名（如 `llm-proxy.example.com`）
    - DNS 托管在 Cloudflare（启用代理模式，橙色云朵）
 
-### 步骤 1：创建专用用户
+#### 步骤 1：创建专用用户
 
 ```bash
 sudo useradd -r -s /sbin/nologin litellm
@@ -112,7 +160,7 @@ sudo chmod 600 /opt/litellm-proxy/.env
 sudo chown litellm:litellm /opt/litellm-proxy/{config.yaml,.env}
 ```
 
-### 步骤 4：配置 systemd 服务
+#### 步骤 4：配置 systemd 服务
 
 ```bash
 # 复制 systemd 服务文件
@@ -132,9 +180,9 @@ sudo systemctl status litellm
 journalctl -u litellm -f
 ```
 
-### 步骤 5：配置 Nginx + Cloudflare SSL
+#### 步骤 5：配置 Nginx + Cloudflare SSL
 
-#### 5.1 生成 Cloudflare Origin Certificate
+**5.1 生成 Cloudflare Origin Certificate**
 
 1. 登录 Cloudflare Dashboard
 2. 选择域名 → SSL/TLS → Origin Server
@@ -148,7 +196,7 @@ sudo nano /etc/nginx/ssl/origin-key.pem      # 粘贴 Private Key
 sudo chmod 600 /etc/nginx/ssl/origin-key.pem
 ```
 
-#### 5.2 配置 Nginx
+**5.2 配置 Nginx**
 
 ```bash
 # 安装 Nginx
@@ -170,12 +218,12 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-#### 5.3 配置 Cloudflare SSL 模式
+**5.3 配置 Cloudflare SSL 模式**
 
 在 Cloudflare Dashboard 中：
 - SSL/TLS → Overview → 选择 **Full (Strict)** 模式
 
-### 步骤 6：验证部署
+#### 步骤 6：验证部署
 
 ```bash
 # 从国内测试（通过 Cloudflare CDN）
@@ -239,6 +287,26 @@ sudo tail -f /var/log/nginx/litellm-error.log
 sudo -u litellm /opt/litellm-proxy/venv/bin/pip install --upgrade 'litellm[proxy]'
 sudo systemctl restart litellm
 ```
+
+### 配置验证
+
+```bash
+# 验证配置文件语法和环境变量
+cd gateway
+./scripts/validate_config.sh
+
+# 详细输出模式
+./scripts/validate_config.sh --verbose
+
+# 验证指定配置文件
+./scripts/validate_config.sh --config /path/to/config.yaml
+```
+
+**验证内容**：
+- ✅ YAML 语法检查
+- ✅ 配置结构验证（必需字段）
+- ✅ 环境变量检查
+- ✅ API Keys 格式验证
 
 ---
 

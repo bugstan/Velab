@@ -49,6 +49,7 @@ interface ChatMessageProps {
  * @returns HTML 字符串
  */
 function renderMarkdown(content: string): string {
+  // First, handle block-level replacements that need to preserve structure
   let html = content;
 
   // 渲染THINKING标记内容（在其他渲染之前）
@@ -64,70 +65,101 @@ function renderMarkdown(content: string): string {
     </details>`;
   });
 
-  // 渲染置信度标签
-  html = html.replace(/置信度[：:]\s*(高|中|低|high|medium|low)/gi, (match, level) => {
-    const normalizedLevel = level.toLowerCase();
-    let color, bgColor, text;
-    
-    if (normalizedLevel === '高' || normalizedLevel === 'high') {
-      color = '#238636';
-      bgColor = 'rgba(35, 134, 54, 0.1)';
-      text = '高';
-    } else if (normalizedLevel === '中' || normalizedLevel === 'medium') {
-      color = '#d29922';
-      bgColor = 'rgba(210, 153, 34, 0.1)';
-      text = '中';
-    } else {
-      color = '#f85149';
-      bgColor = 'rgba(248, 81, 73, 0.1)';
-      text = '低';
-    }
-    
-    return `<span class="inline-flex items-center gap-1 text-xs">
-      <span style="color: var(--text-secondary)">置信度:</span>
-      <span class="px-2 py-0.5 rounded font-medium" style="color: ${color}; background: ${bgColor}">${text}</span>
-    </span>`;
-  });
-
-  // 渲染标题
-  html = html.replace(/^### (.+)$/gm, '<h3 class="text-sm font-semibold mt-4 mb-2" style="color: var(--text-primary)">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2 class="text-base font-semibold mt-5 mb-2" style="color: var(--text-primary)">$1</h2>');
-
-  // 渲染分隔线
-  html = html.replace(/^---$/gm, '<hr class="my-4" style="border-color: var(--border-light)" />');
-
-  // 渲染行内格式
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');  // 粗体
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');  // 行内代码
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:underline">$1</a>');  // 链接
-
-  html = html.replace(/^(\| .+)$/gm, (match) => {
-    if (match.match(/^\|\s*[-:]+/)) return "";
-    const cells = match.split("|").filter(Boolean).map((c) => c.trim());
-    const row = cells.map((c) => `<td class="px-3 py-1.5 text-xs" style="border: 1px solid var(--border-color)">${c}</td>`).join("");
-    return `<tr>${row}</tr>`;
-  });
-
-  html = html.replace(
-    /(<tr>[\s\S]*?<\/tr>[\s]*)+/g,
-    (match) =>
-      `<table class="w-full my-3 text-xs" style="border-collapse: collapse; border: 1px solid var(--border-color)">${match}</table>`
-  );
-
+  // 渲染代码块（在split之前处理，避免被拆分）
   html = html.replace(/```([\s\S]*?)```/g, (_match, code) => {
     return `<pre class="my-3 p-3 rounded-lg text-xs overflow-x-auto" style="background: var(--bg-tertiary); color: var(--text-secondary)"><code>${code.trim()}</code></pre>`;
   });
 
+  // Now process line by line
   const lines = html.split("\n");
   let inList = false;
   let listType: "ul" | "ol" = "ul";
   const processed: string[] = [];
+  let paragraphBuffer: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphBuffer.length > 0) {
+      let paragraphText = paragraphBuffer.join(" ").trim();
+      if (paragraphText) {
+        // Apply inline formatting to the paragraph text
+        paragraphText = paragraphText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        paragraphText = paragraphText.replace(/`([^`]+)`/g, '<code>$1</code>');
+        paragraphText = paragraphText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:underline">$1</a>');
+        paragraphText = paragraphText.replace(/置信度[：:]\s*(高|中|低|high|medium|low)/gi, (match, level) => {
+          const normalizedLevel = level.toLowerCase();
+          let color, bgColor, text;
+          if (normalizedLevel === '高' || normalizedLevel === 'high') {
+            color = '#238636';
+            bgColor = 'rgba(35, 134, 54, 0.1)';
+            text = '高';
+          } else if (normalizedLevel === '中' || normalizedLevel === 'medium') {
+            color = '#d29922';
+            bgColor = 'rgba(210, 153, 34, 0.1)';
+            text = '中';
+          } else {
+            color = '#f85149';
+            bgColor = 'rgba(248, 81, 73, 0.1)';
+            text = '低';
+          }
+          return `<span class="inline-flex items-center gap-1 text-xs"><span style="color: var(--text-secondary)">置信度:</span><span class="px-2 py-0.5 rounded font-medium" style="color: ${color}; background: ${bgColor}">${text}</span></span>`;
+        });
+        
+        processed.push(`<p class="text-sm leading-relaxed mb-1">${paragraphText}</p>`);
+      }
+      paragraphBuffer = [];
+    }
+  };
 
   for (const line of lines) {
-    const ulMatch = line.match(/^- (.+)$/);
-    const olMatch = line.match(/^(\d+)\. (.+)$/);
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines
+    if (!trimmedLine) {
+      if (paragraphBuffer.length > 0) {
+        flushParagraph();
+      }
+      continue;
+    }
 
+    // Check for headings
+    const h3Match = trimmedLine.match(/^### (.+)$/);
+    const h2Match = trimmedLine.match(/^## (.+)$/);
+    if (h3Match) {
+      flushParagraph();
+      if (inList) {
+        processed.push(listType === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      processed.push(`<h3 class="text-sm font-semibold mt-4 mb-2" style="color: var(--text-primary)">${h3Match[1]}</h3>`);
+      continue;
+    }
+    if (h2Match) {
+      flushParagraph();
+      if (inList) {
+        processed.push(listType === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      processed.push(`<h2 class="text-base font-semibold mt-5 mb-2" style="color: var(--text-primary)">${h2Match[1]}</h2>`);
+      continue;
+    }
+
+    // Check for horizontal rule
+    if (trimmedLine === '---') {
+      flushParagraph();
+      if (inList) {
+        processed.push(listType === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      processed.push('<hr class="my-4" style="border-color: var(--border-light)" />');
+      continue;
+    }
+
+    // Check for lists
+    const ulMatch = trimmedLine.match(/^- (.+)$/);
+    const olMatch = trimmedLine.match(/^(\d+)\. (.+)$/);
+    
     if (ulMatch) {
+      flushParagraph();
       if (!inList || listType !== "ul") {
         if (inList) processed.push(listType === "ul" ? "</ul>" : "</ol>");
         processed.push('<ul class="list-disc ml-5 my-2 space-y-1">');
@@ -135,7 +167,11 @@ function renderMarkdown(content: string): string {
         listType = "ul";
       }
       processed.push(`<li class="text-sm leading-relaxed">${ulMatch[1]}</li>`);
-    } else if (olMatch) {
+      continue;
+    }
+    
+    if (olMatch) {
+      flushParagraph();
       if (!inList || listType !== "ol") {
         if (inList) processed.push(listType === "ul" ? "</ul>" : "</ol>");
         processed.push('<ol class="list-decimal ml-5 my-2 space-y-1">');
@@ -143,18 +179,47 @@ function renderMarkdown(content: string): string {
         listType = "ol";
       }
       processed.push(`<li class="text-sm leading-relaxed">${olMatch[2]}</li>`);
-    } else {
+      continue;
+    }
+
+    // Check for tables
+    const tableMatch = trimmedLine.match(/^(\| .+)$/);
+    if (tableMatch) {
+      flushParagraph();
       if (inList) {
         processed.push(listType === "ul" ? "</ul>" : "</ol>");
         inList = false;
       }
-      if (line.trim() && !line.startsWith("<")) {
-        processed.push(`<p class="text-sm leading-relaxed mb-1">${line}</p>`);
-      } else {
-        processed.push(line);
+      if (!trimmedLine.match(/^\|\s*[-:]+/)) {
+        const cells = trimmedLine.split("|").filter(Boolean).map((c) => c.trim());
+        const row = cells.map((c) => `<td class="px-3 py-1.5 text-xs" style="border: 1px solid var(--border-color)">${c}</td>`).join("");
+        processed.push(`<table class="w-full my-3 text-xs" style="border-collapse: collapse; border: 1px solid var(--border-color)"><tr>${row}</tr></table>`);
       }
+      continue;
     }
+
+    // Check if line is already an HTML tag (from previous replacements)
+    if (trimmedLine.startsWith("<")) {
+      flushParagraph();
+      if (inList) {
+        processed.push(listType === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      processed.push(line);
+      continue;
+    }
+
+    // Regular text - add to paragraph buffer
+    if (inList) {
+      processed.push(listType === "ul" ? "</ul>" : "</ol>");
+      inList = false;
+    }
+    paragraphBuffer.push(trimmedLine);
   }
+  
+  // Flush any remaining paragraph
+  flushParagraph();
+  
   if (inList) {
     processed.push(listType === "ul" ? "</ul>" : "</ol>");
   }

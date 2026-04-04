@@ -22,10 +22,11 @@
   - [x] 补充 `gateway/config.yaml` - Key Pool 配置
   - [x] 创建 `gateway/scripts/deploy.sh` - 生产环境自动化部署
   - [x] 创建 `gateway/scripts/start.sh` - 开发环境启动
+  - [x] 创建 `gateway/scripts/validate_config.sh` - 配置验证脚本
   - [x] 创建 `gateway/systemd/litellm.service` - systemd 服务
   - [x] 创建 `gateway/nginx/litellm.conf` - Nginx 反向代理（含 Cloudflare SSL）
   - [x] 完善 `gateway/.env.example` - 环境变量配置（含多 Key Pool）
-  - [x] 完善 `gateway/README.md` - 完整部署文档
+  - [x] 完善 `gateway/README.md` - 完整部署文档（含自动部署和配置验证说明）
 
 - [x] **统一部署脚本**
   - [x] 创建 `scripts/deploy-all.sh` - 单机开发环境一键部署
@@ -153,14 +154,15 @@
 
 - [x] **Jira Knowledge Agent MVP实现** ✅
   - [x] 基础知识库检索（使用Mock数据）
-  - [x] 历史工单匹配
-  - [x] 技术文档检索
-  - [ ] 创建 `services/vector_search.py` - 向量检索服务
-  - [ ] 实现 Tool Use：`vector_search_jira_issues`
-  - [ ] 实现 Tool Use：`get_jira_issue_detail`
-  - [ ] 补充 FOTA 典型故障案例数据
+  - [x] 历史工单匹配（从 `backend/data/jira_mock/tickets.json` 读取）
+  - [x] 技术文档检索（从 `backend/data/jira_mock/documents.json` 读取）
+  - [ ] 创建 `services/vector_search.py` - 向量检索服务（当前使用简单文本匹配）
+  - [ ] 实现 Tool Use：`vector_search_jira_issues`（当前使用 Mock 实现）
+  - [ ] 实现 Tool Use：`get_jira_issue_detail`（当前使用 Mock 实现）
+  - [ ] 补充 FOTA 典型故障案例数据（当前有 4 个 Mock 工单）
 
-- [ ] **Doc Retrieval Agent 实现**
+- [ ] **Doc Retrieval Agent 实现**（暂未实现，当前仅有 Log Analytics 和 Jira Knowledge 两个 Agent）
+  - [ ] 创建 `backend/agents/doc_retrieval.py`
   - [ ] 实现 Tool Use：`search_document_knowledge_base`
   - [ ] 实现 Tool Use：`get_document_chunk`
 
@@ -205,11 +207,12 @@
   - [x] 更新为FOTA诊断专用问题（[`web/src/lib/types.ts`](../web/src/lib/types.ts:71-92)）
   - [x] 4个诊断场景：升级失败分析、历史案例查询、iCGM挂死分析、MPU校验失败
 
-### 4. 数据与演示场景准备 (P2) - 40% 完成
+### 4. 数据与演示场景准备 (P2) - 30% 完成
 
-- [x] **演示日志集** ✅
-  - [x] 在 `backend/data/logs/` 放置典型 FOTA 故障日志样本
-  - [x] iCGM 死循环下载 + 文件校验失败场景
+- [x] **演示日志集** ⚠️ 部分完成
+  - [x] 在 `backend/data/jira_mock/` 放置 Mock 数据（tickets.json + documents.json）
+  - [ ] 在 `backend/data/logs/` 放置典型 FOTA 故障日志样本（目录不存在）
+  - [ ] iCGM 死循环下载 + 文件校验失败场景
   - [ ] ECU 状态不一致
   - [ ] 网络中断导致升级失败
   - [ ] 重启中断下载
@@ -299,10 +302,10 @@
 | MVP核心功能 | 100% | ✅ 完成 |
 | 后端核心逻辑（在线诊断增强） | 70% | 🚧 进行中 |
 | 前端交互功能 | 100% | ✅ 完成 |
-| 数据与演示场景 | 40% | 🚧 进行中 |
+| 数据与演示场景 | 30% | 🚧 进行中 |
 | 评测与验收 | 0% | 📅 待开始 |
 
-**总体进度**: 约 **85%**
+**总体进度**: 约 **83%**
 
 ---
 
@@ -314,8 +317,10 @@
 - [环境安装配置报告](./环境安装配置报告.md) - 环境配置详细报告
 - [AI专家项目分析报告](./AI专家项目分析报告.md) - 项目深度分析
 - [部署配置完整性检查报告](./部署配置完整性检查报告.md) - 配置完整性检查
-- [FOTA智能诊断平台_系统设计方案](./FOTA智能诊断平台_系统设计方案.md) - 系统架构设计
-- [FOTA智能诊断平台_可行性方案（修订版v6）](./FOTA智能诊断平台_可行性方案（修订版v6）.md) - 可行性分析
+- [FOTA智能诊断平台_系统设计方案（v5_废弃）](./FOTA智能诊断平台_系统设计方案（v5_废弃）.md) - 历史设计方案（已废弃）
+- [FOTA智能诊断平台_可行性方案（修订版v6）](./FOTA智能诊断平台_可行性方案（修订版v6）.md) - 当前权威设计方案 ⭐
+- [FOTA_LLM_API中转方案](./FOTA_LLM_API中转方案.md) - LiteLLM Gateway 架构设计
+- [LLM_429限流防御方案](./LLM_429限流防御方案.md) - 限流防御策略
 - [Backend README](../backend/README.md) - Backend 部署文档
 - [Gateway README](../gateway/README.md) - Gateway 部署文档
 - [Web README](../web/README.md) - 前端部署文档
