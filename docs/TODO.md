@@ -90,10 +90,10 @@
     - [x] 同步/异步数据库连接管理
     - [x] 批量操作优化（bulk_insert/upsert）
   - [x] **API接口层（15个端点）**
-    - [x] Cases API（5个端点）- 案件管理
-    - [x] Logs API（2个端点）- 日志文件上传
+    - [x] Cases API（4个端点）- 案件管理（创建/查询/列表/删除）
+    - [x] Logs API（4个端点）- 日志文件管理（上传/查询/列表/删除）
     - [x] Parse API（3个端点）- 解析任务提交/查询/时间对齐
-    - [x] Events API（5个端点）- 事件查询/导出/统计
+    - [x] Events API（4个端点）- 事件查询/单个/摘要/导出
   - [x] **任务队列集成**
     - [x] Arq异步任务队列（基于Redis）
     - [x] Worker实现（parse_logs_task）
