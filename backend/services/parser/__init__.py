@@ -17,6 +17,11 @@ Parser Service - 多格式日志解析服务
 from .base import BaseParser, ParsedEvent, ParserRegistry
 from .parser_android import AndroidParser
 from .parser_fota import FotaParser
+from .parser_kernel import KernelParser
+from .parser_mcu import MCUParser
+from .parser_dlt import DLTParser
+from .parser_ibdu import IBDUParser
+from .parser_vehicle_signal import VehicleSignalParser
 
 __all__ = [
     "BaseParser",
@@ -24,4 +29,9 @@ __all__ = [
     "ParserRegistry",
     "AndroidParser",
     "FotaParser",
+    "KernelParser",
+    "MCUParser",
+    "DLTParser",
+    "IBDUParser",
+    "VehicleSignalParser",
 ]
