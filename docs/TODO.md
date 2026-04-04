@@ -1,8 +1,8 @@
 # Velab 项目任务清单
 
-> **最后更新**: 2026-04-02
-> **当前阶段**: Sprint 1 - 基础架构完成 + 代码注释完善
-> **下一阶段**: Sprint 2 - 核心功能实现
+> **最后更新**: 2026-04-04
+> **当前阶段**: Sprint 2 - P0核心功能已完成，P1在线诊断进行中
+> **下一阶段**: Sprint 3 - 前端UI开发
 
 ---
 
@@ -62,6 +62,49 @@
   - [x] 创建完整测试文档 `web/README_TESTING.md`
   - [x] 更新文档以反映测试框架变更
 
+- [x] **离线数据预处理管线 (P0) - 100% 完成 (2026-04-04 新增)**
+  - [x] **数据库 Schema 创建**
+    - [x] `diagnosis_cases` 表（案件记录）
+    - [x] `raw_log_files` 表（原始日志文件元数据）
+    - [x] `diagnosis_events` 表（诊断事件详情）
+    - [x] `confirmed_diagnosis` 表（已确认诊断缓存）
+  - [x] **Parser Service 实现（7个解析器）**
+    - [x] `parser_android` - Android logcat 解析
+    - [x] `parser_fota` - FOTA 文本日志解析
+    - [x] `parser_kernel` - kernel / tombstone / ANR 解析
+    - [x] `parser_mcu` - MCU 日志解析
+    - [x] `parser_dlt` - AUTOSAR DLT 格式解析
+    - [x] `parser_ibdu` - iBDU 电源管理日志解析
+    - [x] `parser_vehicle_signal` - 车辆信号导出文件解析
+  - [x] **Time Alignment Service 实现**
+    - [x] 锚点事件识别（Android启动/关键系统事件）
+    - [x] 时钟偏移计算（线性回归拟合）
+    - [x] `normalized_ts` 生成
+    - [x] 三级降级策略（高/中/低置信度）
+  - [x] **Event Normalizer 实现**
+    - [x] 语义归一化（统一事件描述）
+    - [x] 降噪（过滤冗余事件）
+    - [x] 事件分类（ERROR/WARNING/INFO等）
+  - [x] **数据库集成层**
+    - [x] SQLAlchemy 2.0+ ORM模型
+    - [x] 同步/异步数据库连接管理
+    - [x] 批量操作优化（bulk_insert/upsert）
+  - [x] **API接口层（15个端点）**
+    - [x] Cases API（5个端点）- 案件管理
+    - [x] Logs API（2个端点）- 日志文件上传
+    - [x] Parse API（3个端点）- 解析任务提交/查询/时间对齐
+    - [x] Events API（5个端点）- 事件查询/导出/统计
+  - [x] **任务队列集成**
+    - [x] Arq异步任务队列（基于Redis）
+    - [x] Worker实现（parse_logs_task）
+    - [x] 任务客户端（提交/查询/取消）
+  - [x] **API测试（34个测试）**
+    - [x] Cases API单元测试（9个测试）
+    - [x] Parse API单元测试（8个测试）
+    - [x] Events API单元测试（13个测试）
+    - [x] 集成测试（4个测试）
+  - [x] 创建完整实施报告 `docs/P0任务实施进度报告.md`
+
 ---
 
 ## 🚧 进行中任务
@@ -101,35 +144,7 @@
 
 ## 📋 待开始任务
 
-### 3. 离线数据预处理管线 (P0) - 0% 完成
-
-- [ ] **Parser Service 实现**
-  - [ ] `parser_android` - Android logcat 解析
-  - [ ] `parser_kernel` - kernel / tombstone / ANR 解析
-  - [ ] `parser_fota` - FOTA 文本日志解析
-  - [ ] `parser_dlt` - DLT 格式解析
-  - [ ] `parser_mcu` - MCU 日志解析
-  - [ ] `parser_ibdu` - iBDU 日志解析
-  - [ ] `parser_vehicle_signal` - 车型信号导出文件解析
-
-- [ ] **Time Alignment Service 实现**
-  - [ ] 锚点事件识别
-  - [ ] Offset 拟合
-  - [ ] `normalized_ts` 生成
-  - [ ] 三级降级策略
-
-- [ ] **Event Normalizer 实现**
-  - [ ] 语义归一化
-  - [ ] 降噪
-  - [ ] 事件分类
-
-- [ ] **数据库 Schema 创建**
-  - [ ] `diagnosis_events` 表（标准事件表）
-  - [ ] `case_record` 表（案件记录）
-  - [ ] `raw_log_file` 表（原始日志文件）
-  - [ ] `confirmed_diagnosis` 表（已确认诊断缓存）
-
-### 4. 前端交互功能开发 (P1) - 0% 完成
+### 3. 前端交互功能开发 (P1) - 0% 完成
 
 - [ ] **SSE 流式渲染优化**
   - [ ] `<<<THINKING>>>` 标记内容灰色折叠框展示
@@ -200,7 +215,11 @@
 - ✅ 文档完善
 
 ### Sprint 2（进行中）🚧
-- 🚧 离线预处理管线（Parser + Time Alignment + Event Normalizer）
+- ✅ 离线预处理管线（Parser + Time Alignment + Event Normalizer）- 已完成
+- ✅ 数据库集成层（ORM + 批量操作）- 已完成
+- ✅ API接口层（15个端点）- 已完成
+- ✅ 任务队列集成（Arq + Redis）- 已完成
+- ✅ API测试（34个测试）- 已完成
 - 🚧 三个 Agent 完整实现（Log + Jira + Doc）
 - 🚧 RCA Synthesizer 实现
 - 🚧 语义缓存实现
@@ -225,13 +244,16 @@
 |------|--------|------|
 | 基础设施与部署 | 100% | ✅ 完成 |
 | 代码注释与文档 | 100% | ✅ 完成 |
-| 后端核心逻辑 | 30% | 🚧 进行中 |
-| 离线预处理管线 | 0% | 📅 待开始 |
+| 离线预处理管线 | 100% | ✅ 完成 |
+| 数据库与API | 100% | ✅ 完成 |
+| 任务队列集成 | 100% | ✅ 完成 |
+| API测试 | 100% | ✅ 完成 |
+| 后端核心逻辑（在线诊断） | 30% | 🚧 进行中 |
 | 前端交互功能 | 0% | 📅 待开始 |
 | 数据与演示场景 | 0% | 📅 待开始 |
 | 评测与验收 | 0% | 📅 待开始 |
 
-**总体进度**: 约 **30%**
+**总体进度**: 约 **60%**
 
 ---
 
@@ -248,5 +270,5 @@
 
 ---
 
-**最后更新**: 2026-04-02  
+**最后更新**: 2026-04-04
 **维护人**: AI 开发专家
