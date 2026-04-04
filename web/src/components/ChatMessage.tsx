@@ -23,6 +23,7 @@
 import { ChatMessage as ChatMessageType } from "@/lib/types";
 import ThinkingProcess from "./ThinkingProcess";
 import FeedbackButtons from "./FeedbackButtons";
+import SourcePanel from "./SourcePanel";
 
 /**
  * 组件属性接口
@@ -49,6 +50,44 @@ interface ChatMessageProps {
  */
 function renderMarkdown(content: string): string {
   let html = content;
+
+  // 渲染THINKING标记内容（在其他渲染之前）
+  html = html.replace(/<<<THINKING>>>([\s\S]*?)<<<\/THINKING>>>/g, (_match, thinkingContent) => {
+    return `<details class="my-3 rounded-lg overflow-hidden" style="border: 1px solid var(--border-color); background: var(--bg-tertiary)">
+      <summary class="px-4 py-2.5 cursor-pointer text-xs font-medium flex items-center gap-2 hover:opacity-80 transition-opacity" style="color: var(--text-muted)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" class="transform transition-transform">
+          <path d="M3 4.5L6 7.5L9 4.5" />
+        </svg>
+        <span>思考过程</span>
+      </summary>
+      <div class="px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap" style="color: var(--text-muted); border-top: 1px solid var(--border-color)">${thinkingContent.trim()}</div>
+    </details>`;
+  });
+
+  // 渲染置信度标签
+  html = html.replace(/置信度[：:]\s*(高|中|低|high|medium|low)/gi, (match, level) => {
+    const normalizedLevel = level.toLowerCase();
+    let color, bgColor, text;
+    
+    if (normalizedLevel === '高' || normalizedLevel === 'high') {
+      color = '#238636';
+      bgColor = 'rgba(35, 134, 54, 0.1)';
+      text = '高';
+    } else if (normalizedLevel === '中' || normalizedLevel === 'medium') {
+      color = '#d29922';
+      bgColor = 'rgba(210, 153, 34, 0.1)';
+      text = '中';
+    } else {
+      color = '#f85149';
+      bgColor = 'rgba(248, 81, 73, 0.1)';
+      text = '低';
+    }
+    
+    return `<span class="inline-flex items-center gap-1 text-xs">
+      <span style="color: var(--text-secondary)">置信度:</span>
+      <span class="px-2 py-0.5 rounded font-medium" style="color: ${color}; background: ${bgColor}">${text}</span>
+    </span>`;
+  });
 
   // 渲染标题
   html = html.replace(/^### (.+)$/gm, '<h3 class="text-sm font-semibold mt-4 mb-2" style="color: var(--text-primary)">$1</h3>');
@@ -182,6 +221,10 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
               __html: renderMarkdown(message.content),
             }}
           />
+
+          {!message.isStreaming && message.sources && message.sources.length > 0 && (
+            <SourcePanel sources={message.sources} />
+          )}
 
           {!message.isStreaming && message.content && <FeedbackButtons />}
         </div>
