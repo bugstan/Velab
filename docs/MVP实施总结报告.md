@@ -327,7 +327,7 @@ Orchestrator (编排器)
 
 ### P3 - 工程化（长期）
 
-- [ ] 前端UI优化（基础UI已完成70%，待完善：THINKING标记渲染、Markdown报告、引用来源面板、FOTA专用预设问题）
+- [x] 前端UI完善（已100%完成：THINKING标记渲染、Markdown报告、引用来源面板、FOTA专用预设问题）
 - [ ] 用户反馈闭环
 - [ ] A/B测试框架
 - [ ] 性能优化和监控
