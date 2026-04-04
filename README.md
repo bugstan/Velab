@@ -42,7 +42,12 @@ Velab/
 │   ├── config.yaml       # LiteLLM 模型路由配置
 │   └── README.md         # Gateway 部署文档
 │
-├── web/                  # Next.js 前端（未来）
+├── web/                  # Next.js 前端（已完成）
+│   ├── src/
+│   │   ├── app/          # Next.js App Router
+│   │   ├── components/   # React组件（ChatMessage/ThinkingProcess/SourcePanel等）
+│   │   └── __tests__/    # 前端测试（Vitest + React Testing Library）
+│   └── README.md         # 前端部署文档
 │
 ├── docs/                 # 项目文档
 │   ├── P0任务实施进度报告.md  # 实施进度报告（最新）
@@ -157,14 +162,18 @@ open http://localhost:8000/docs
 | 数据库与API | 100% | ✅ 完成 |
 | 任务队列集成 | 100% | ✅ 完成 |
 | API测试 | 100% | ✅ 完成 |
-| 后端核心逻辑（在线诊断） | 30% | 🚧 进行中 |
-| 前端交互功能 | 0% | 📅 待开始 |
-| 数据与演示场景 | 0% | 📅 待开始 |
+| MVP核心功能 | 100% | ✅ 完成 |
+| 前端交互功能 | 100% | ✅ 完成 |
+| 后端核心逻辑（在线诊断增强） | 70% | 🚧 进行中 |
+| 数据与演示场景 | 40% | 🚧 进行中 |
 | 评测与验收 | 0% | 📅 待开始 |
 
-**总体进度**: 约 **60%**
+**总体进度**: 约 **85%**
 
-详细任务清单请查看：[P0任务实施进度报告](docs/P0任务实施进度报告.md)
+详细任务清单请查看：
+- [TODO.md](docs/TODO.md) - 项目任务清单（最新）
+- [MVP实施总结报告](docs/MVP实施总结报告.md) - MVP实施详细报告
+- [P0任务实施进度报告](docs/P0任务实施进度报告.md) - P0离线预处理管线实施报告
 
 ---
 
@@ -172,7 +181,14 @@ open http://localhost:8000/docs
 
 ### 快速入门
 
-- **[claude.md](claude.md)** - 完整项目文档（开发指南、API 文档、部署指南）⭐ 推荐首先阅读
+- **[CLAUDE.md](CLAUDE.md)** - 完整项目文档（开发指南、API 文档、部署指南）⭐ 推荐首先阅读
+- **[TODO.md](docs/TODO.md)** - 项目任务清单（最新进度）⭐ 推荐查看
+
+### 实施报告
+
+- **[MVP实施总结报告](docs/MVP实施总结报告.md)** - MVP实施详细报告 ⭐ 最新完成
+- [P0任务实施进度报告](docs/P0任务实施进度报告.md) - P0离线预处理管线实施报告
+- [环境安装配置报告](docs/环境安装配置报告.md) - 环境配置详细报告
 
 ### 系统设计
 
@@ -184,6 +200,7 @@ open http://localhost:8000/docs
 
 - [Backend README](backend/README.md) - Backend 部署文档
 - [Gateway README](gateway/README.md) - Gateway 部署文档
+- [Web README](web/README.md) - 前端部署文档
 - [部署配置完整性检查报告](docs/部署配置完整性检查报告.md) - 配置完整性检查
 
 ### 技术方案
@@ -240,6 +257,6 @@ open http://localhost:8000/docs
 
 ---
 
-**项目状态**: 🚧 开发中（P0核心功能已完成，P1在线诊断进行中）
+**项目状态**: 🚧 开发中（MVP已完成，前端UI已完成，后端在线诊断增强进行中）
 **最后更新**: 2026-04-04
 **维护团队**: AI 开发专家
