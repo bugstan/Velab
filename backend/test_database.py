@@ -12,12 +12,12 @@ import sys
 # 添加backend目录到Python路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.database import DatabaseManager, db_manager
-from backend.db_operations import BatchOperations
-from backend.models.case import Case
-from backend.models.log_file import RawLogFile, ParseStatus
-from backend.models.event import DiagnosisEvent
-from backend.models.diagnosis import ConfirmedDiagnosis
+from database import DatabaseManager, db_manager
+from db_operations import BatchOperations
+from models.case import Case
+from models.log_file import RawLogFile, ParseStatus
+from models.event import DiagnosisEvent
+from models.diagnosis import ConfirmedDiagnosis
 
 
 class TestDatabaseModels(unittest.TestCase):

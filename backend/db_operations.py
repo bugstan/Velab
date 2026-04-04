@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from backend.models.base import Base
-from backend.models.event import DiagnosisEvent
-from backend.models.log_file import RawLogFile, ParseStatus
+from models.base import Base
+from models.event import DiagnosisEvent
+from models.log_file import RawLogFile, ParseStatus
 
 logger = logging.getLogger(__name__)
 

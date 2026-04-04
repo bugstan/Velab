@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
-from base import BaseParser, ParsedEvent, EventLevel, EventType
+from .base import BaseParser, ParsedEvent, EventLevel, EventType
 
 
 class VehicleSignalParser(BaseParser):

@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
-from base import BaseParser, ParsedEvent, EventLevel, EventType
+from .base import BaseParser, ParsedEvent, EventLevel, EventType
 
 
 class MCUParser(BaseParser):

@@ -14,7 +14,7 @@ Parser Service - 多格式日志解析服务
 创建时间：2026-04-03
 """
 
-from .base import BaseParser, ParsedEvent, ParserRegistry
+from .base import BaseParser, ParsedEvent, ParserRegistry, registry
 from .parser_android import AndroidParser
 from .parser_fota import FotaParser
 from .parser_kernel import KernelParser
@@ -23,10 +23,15 @@ from .parser_dlt import DLTParser
 from .parser_ibdu import IBDUParser
 from .parser_vehicle_signal import VehicleSignalParser
 
+# 为了兼容性，提供parser_registry别名
+parser_registry = registry
+
 __all__ = [
     "BaseParser",
     "ParsedEvent",
     "ParserRegistry",
+    "registry",
+    "parser_registry",
     "AndroidParser",
     "FotaParser",
     "KernelParser",

@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
-from base import BaseParser, ParsedEvent, EventLevel, EventType, registry
+from .base import BaseParser, ParsedEvent, EventLevel, EventType, registry
 
 
 class FotaParser(BaseParser):
