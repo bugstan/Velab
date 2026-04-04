@@ -175,7 +175,7 @@
 
 ## 📋 待开始任务
 
-### 3. 前端交互功能开发 (P1) - 70% 完成
+### 3. 前端交互功能开发 (P1) - 100% 完成 ✅
 
 - [x] **基础UI框架** ✅
   - [x] 聊天式诊断页面（[`web/src/app/page.tsx`](../web/src/app/page.tsx)）
@@ -186,8 +186,8 @@
 - [x] **SSE流式渲染** ✅
   - [x] 基础SSE流式处理
   - [x] 实时消息展示
-  - [ ] `<<<THINKING>>>` 标记内容灰色折叠框展示（当前为普通文本）
-  - [ ] Markdown 格式诊断报告渲染（表格 + 置信度标签）
+  - [x] `<<<THINKING>>>` 标记内容灰色折叠框展示（[`web/src/components/ChatMessage.tsx`](../web/src/components/ChatMessage.tsx:53-63)）
+  - [x] Markdown 格式诊断报告渲染（表格 + 置信度标签）（[`web/src/components/ChatMessage.tsx`](../web/src/components/ChatMessage.tsx:65-77)）
 
 - [x] **执行状态 Timeline** ✅
   - [x] ThinkingProcess组件（[`web/src/components/ThinkingProcess.tsx`](../web/src/components/ThinkingProcess.tsx)）
@@ -195,13 +195,15 @@
   - [x] Agent 状态实时更新（Analyzing... → Done）
   - [x] 步骤折叠/展开功能
 
-- [ ] **引用来源面板**
-  - [ ] 点击引用来源弹出浮窗
-  - [ ] 展示对应的日志片段或 Jira 描述
+- [x] **引用来源面板** ✅
+  - [x] SourcePanel组件（[`web/src/components/SourcePanel.tsx`](../web/src/components/SourcePanel.tsx)）
+  - [x] 点击引用来源弹出浮窗或打开链接
+  - [x] 支持日志/Jira/文档/PDF类型
+  - [x] 展示对应的日志片段或 Jira 描述
 
-- [ ] **FOTA专用预设问题**
-  - [ ] 当前预设问题是通用的（安装空气滤芯、连接手机等）
-  - [ ] 需要替换为FOTA诊断专用问题
+- [x] **FOTA专用预设问题** ✅
+  - [x] 更新为FOTA诊断专用问题（[`web/src/lib/types.ts`](../web/src/lib/types.ts:71-92)）
+  - [x] 4个诊断场景：升级失败分析、历史案例查询、iCGM挂死分析、MPU校验失败
 
 ### 4. 数据与演示场景准备 (P2) - 40% 完成
 
@@ -212,12 +214,13 @@
   - [ ] 网络中断导致升级失败
   - [ ] 重启中断下载
 
-- [ ] **FOTA专用场景引导词**
-  - [ ] 前端已有预设问题功能，但内容是通用的
-  - [ ] 需要替换为FOTA诊断专用问题：
-    - [ ] 「分析为何 iCGM 在 11:24 发生心跳丢失」
-    - [ ] 「查询类似 FOTA-9123 的历史案例」
-    - [ ] 「FOTA 升级失败的根本原因是什么」
+- [x] **FOTA专用场景引导词** ✅
+  - [x] 前端预设问题已更新为FOTA诊断专用
+  - [x] 4个预设问题：
+    - [x] 「分析 FOTA 升级失败的根本原因」
+    - [x] 「查询类似 FOTA-9123 的历史案例」
+    - [x] 「分析为何 iCGM 模块升级时挂死」
+    - [x] 「MPU 升级包校验失败的常见原因」
 
 - [x] **Jira 工单数据（Mock）** ✅
   - [x] 创建Mock历史 Jira 工单（4个）
@@ -293,11 +296,11 @@
 | API测试 | 100% | ✅ 完成 |
 | MVP核心功能 | 100% | ✅ 完成 |
 | 后端核心逻辑（在线诊断增强） | 70% | 🚧 进行中 |
-| 前端交互功能 | 70% | 🚧 进行中 |
+| 前端交互功能 | 100% | ✅ 完成 |
 | 数据与演示场景 | 40% | 🚧 进行中 |
 | 评测与验收 | 0% | 📅 待开始 |
 
-**总体进度**: 约 **78%**
+**总体进度**: 约 **85%**
 
 ---
 
