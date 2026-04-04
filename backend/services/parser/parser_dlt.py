@@ -7,6 +7,7 @@ DLT是汽车行业标准的日志格式
 
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
 from base import BaseParser, ParsedEvent, EventLevel, EventType
 
@@ -15,7 +16,11 @@ class DLTParser(BaseParser):
     """DLT日志解析器"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            source_type="dlt",
+            parser_name="parser_dlt",
+            parser_version="1.0.0"
+        )
         
         # DLT文本格式示例:
         # 2024/01/01 10:00:00.123456 123456 ECU1 APP1 CTX1 log info V 1 [Message text]
@@ -49,16 +54,46 @@ class DLTParser(BaseParser):
             'warn': EventLevel.WARN,
             'info': EventLevel.INFO,
             'debug': EventLevel.DEBUG,
-            'verbose': EventLevel.VERBOSE,
+            'verbose': EventLevel.DEBUG,
         }
         
         # Message type mapping
         self.type_map = {
-            'log': EventType.INFO,
-            'app_trace': EventType.DIAGNOSTIC,
+            'log': EventType.LOG,
+            'app_trace': EventType.SYSTEM,
             'nw_trace': EventType.NETWORK,
             'control': EventType.SYSTEM,
         }
+    
+    def parse_file(
+        self,
+        file_path: Path,
+        time_window: Optional[tuple[datetime, datetime]] = None,
+        max_lines: Optional[int] = None
+    ) -> Iterator[ParsedEvent]:
+        """解析DLT日志文件"""
+        if not file_path.exists():
+            raise FileNotFoundError(f"日志文件不存在: {file_path}")
+        
+        line_number = 0
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line_number += 1
+                line = line.rstrip('\n\r')
+                
+                if not line.strip():
+                    continue
+                
+                event = self.parse_line(line, line_number)
+                
+                if event:
+                    if self._should_skip_line(event.original_ts, time_window):
+                        continue
+                    yield event
+                
+                if max_lines and line_number >= max_lines:
+                    break
     
     def parse_line(
         self,
@@ -94,7 +129,7 @@ class DLTParser(BaseParser):
             level = self.level_map.get(level_str, EventLevel.INFO)
             
             # 确定事件类型
-            event_type = self.type_map.get(msg_type, EventType.INFO)
+            event_type = self.type_map.get(msg_type, EventType.LOG)
             event_type = self._refine_event_type(payload, event_type, level)
             
             # 构建模块名
@@ -111,16 +146,14 @@ class DLTParser(BaseParser):
                 'num_args': num_args
             }
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='dlt',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=payload,
-                raw=line,
-                line_number=line_number,
-                metadata=metadata
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields=metadata
             )
         
         # 尝试简化格式
@@ -141,18 +174,16 @@ class DLTParser(BaseParser):
             level = self.level_map.get(level_str, EventLevel.INFO)
             
             # 确定事件类型
-            event_type = self._refine_event_type(message, EventType.INFO, level)
+            event_type = self._refine_event_type(message, EventType.LOG, level)
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='dlt',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=app_id,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata={'app_id': app_id}
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields={'app_id': app_id}
             )
         
         # 无法解析的行
@@ -183,7 +214,7 @@ class DLTParser(BaseParser):
         
         # 诊断相关
         if any(kw in message_lower for kw in ['dtc', 'diagnostic', 'uds', 'obd']):
-            return EventType.DIAGNOSTIC
+            return EventType.SYSTEM
         
         # 系统相关
         if any(kw in message_lower for kw in ['boot', 'init', 'shutdown', 'reset']):

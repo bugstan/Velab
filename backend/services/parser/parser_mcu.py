@@ -10,6 +10,7 @@ MCU Log Parser
 
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
 from base import BaseParser, ParsedEvent, EventLevel, EventType
 
@@ -18,7 +19,11 @@ class MCUParser(BaseParser):
     """MCU日志解析器"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            source_type="mcu",
+            parser_name="parser_mcu",
+            parser_version="1.0.0"
+        )
         
         # MCU log格式示例:
         # [12345] [INFO] [MODULE] message
@@ -61,12 +66,42 @@ class MCUParser(BaseParser):
             'INFO': EventLevel.INFO,
             'D': EventLevel.DEBUG,
             'DEBUG': EventLevel.DEBUG,
-            'V': EventLevel.VERBOSE,
-            'VERBOSE': EventLevel.VERBOSE,
+            'V': EventLevel.DEBUG,
+            'VERBOSE': EventLevel.DEBUG,
         }
         
         # 基准时间（用于相对时间转换）
         self.base_time = datetime.now()
+    
+    def parse_file(
+        self,
+        file_path: Path,
+        time_window: Optional[tuple[datetime, datetime]] = None,
+        max_lines: Optional[int] = None
+    ) -> Iterator[ParsedEvent]:
+        """解析MCU日志文件"""
+        if not file_path.exists():
+            raise FileNotFoundError(f"日志文件不存在: {file_path}")
+        
+        line_number = 0
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line_number += 1
+                line = line.rstrip('\n\r')
+                
+                if not line.strip():
+                    continue
+                
+                event = self.parse_line(line, line_number)
+                
+                if event:
+                    if self._should_skip_line(event.original_ts, time_window):
+                        continue
+                    yield event
+                
+                if max_lines and line_number >= max_lines:
+                    break
     
     def parse_line(
         self,
@@ -95,16 +130,14 @@ class MCUParser(BaseParser):
             # 确定事件类型
             event_type = self._determine_event_type(message, level)
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='mcu',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata={'uptime_seconds': timestamp_sec}
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields={'uptime_seconds': timestamp_sec}
             )
         
         # 尝试格式2
@@ -119,16 +152,14 @@ class MCUParser(BaseParser):
             level = self.level_map.get(level_char, EventLevel.INFO)
             event_type = self._determine_event_type(message, level)
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='mcu',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata={'uptime_seconds': timestamp_sec}
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields={'uptime_seconds': timestamp_sec}
             )
         
         # 尝试格式3
@@ -144,16 +175,14 @@ class MCUParser(BaseParser):
             level = self._infer_level_from_message(message)
             event_type = self._determine_event_type(message, level)
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='mcu',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata={'uptime_ms': timestamp_ms}
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields={'uptime_ms': timestamp_ms}
             )
         
         # 无法解析的行
@@ -163,15 +192,13 @@ class MCUParser(BaseParser):
         """根据消息内容确定事件类型"""
         message_lower = message.lower()
         
+        # FOTA相关 (优先级最高,即使是错误也要识别为FOTA)
+        if any(kw in message_lower for kw in ['fota', 'update', 'upgrade', 'flash']):
+            return EventType.FOTA_STAGE
+        
         # 错误相关
         if level in [EventLevel.FATAL, EventLevel.ERROR]:
-            if any(kw in message_lower for kw in ['crash', 'panic', 'fault']):
-                return EventType.CRASH
             return EventType.ERROR
-        
-        # FOTA相关
-        if any(kw in message_lower for kw in ['fota', 'update', 'upgrade', 'flash']):
-            return EventType.FOTA
         
         # 网络相关
         if any(kw in message_lower for kw in ['can', 'lin', 'ethernet', 'network']):
@@ -179,13 +206,13 @@ class MCUParser(BaseParser):
         
         # 电源相关
         if any(kw in message_lower for kw in ['power', 'voltage', 'battery', 'sleep', 'wake']):
-            return EventType.POWER
+            return EventType.SYSTEM
         
         # 系统相关
         if any(kw in message_lower for kw in ['init', 'boot', 'reset', 'shutdown']):
             return EventType.SYSTEM
         
-        return EventType.INFO
+        return EventType.LOG
     
     def _infer_level_from_message(self, message: str) -> EventLevel:
         """从消息内容推断日志级别"""

@@ -10,6 +10,7 @@ Kernel Log Parser
 
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
 from base import BaseParser, ParsedEvent, EventLevel, EventType
 
@@ -18,7 +19,11 @@ class KernelParser(BaseParser):
     """Kernel日志解析器"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            source_type="kernel",
+            parser_name="parser_kernel",
+            parser_version="1.0.0"
+        )
         
         # Kernel log格式: [timestamp] level message
         # 例如: [  123.456789] <6>[ T1234] message
@@ -59,13 +64,50 @@ class KernelParser(BaseParser):
         self.level_map = {
             '0': EventLevel.FATAL,    # KERN_EMERG
             '1': EventLevel.FATAL,    # KERN_ALERT
-            '2': EventLevel.CRITICAL, # KERN_CRIT
+            '2': EventLevel.FATAL, # KERN_CRIT
             '3': EventLevel.ERROR,    # KERN_ERR
             '4': EventLevel.WARN,     # KERN_WARNING
             '5': EventLevel.INFO,     # KERN_NOTICE
             '6': EventLevel.INFO,     # KERN_INFO
             '7': EventLevel.DEBUG,    # KERN_DEBUG
         }
+    
+    def parse_file(
+        self,
+        file_path: Path,
+        time_window: Optional[tuple[datetime, datetime]] = None,
+        max_lines: Optional[int] = None
+    ) -> Iterator[ParsedEvent]:
+        """解析kernel日志文件"""
+        if not file_path.exists():
+            raise FileNotFoundError(f"日志文件不存在: {file_path}")
+        
+        line_number = 0
+        context = {
+            'in_tombstone': False,
+            'in_anr': False,
+            'in_backtrace': False,
+            'crash_info': {},
+            'backtrace_lines': []
+        }
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line_number += 1
+                line = line.rstrip('\n\r')
+                
+                if not line.strip():
+                    continue
+                
+                event = self.parse_line(line, line_number, context)
+                
+                if event:
+                    if self._should_skip_line(event.original_ts, time_window):
+                        continue
+                    yield event
+                
+                if max_lines and line_number >= max_lines:
+                    break
     
     def parse_line(
         self,
@@ -106,16 +148,14 @@ class KernelParser(BaseParser):
             except ValueError:
                 timestamp = datetime.now()
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='kernel',
-                level=EventLevel.ERROR,
+            return self._create_event(
+                original_ts=timestamp,                level=EventLevel.ERROR,
                 event_type=EventType.ANR,
                 module='ANR',
                 message=f'ANR detected in process {pid}',
-                raw=line,
-                line_number=line_number,
-                metadata={'pid': pid}
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields={'pid': pid}
             )
         
         # 解析kernel log格式
@@ -135,7 +175,7 @@ class KernelParser(BaseParser):
             # 检查是否是panic
             if self.panic_pattern.search(message):
                 level = EventLevel.FATAL
-                event_type = EventType.CRASH
+                event_type = EventType.ERROR
             else:
                 event_type = EventType.SYSTEM
             
@@ -148,7 +188,7 @@ class KernelParser(BaseParser):
             if signal_match:
                 metadata['signal'] = signal_match.group(1)
                 metadata['signal_name'] = signal_match.group(2)
-                event_type = EventType.CRASH
+                event_type = EventType.ERROR
             
             if tid:
                 metadata['tid'] = tid
@@ -167,16 +207,14 @@ class KernelParser(BaseParser):
                     metadata['stack_trace'] = '\n'.join(context['backtrace_lines'])
                     context['backtrace_lines'] = []
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='kernel',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata=metadata
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields=metadata
             )
         
         # 如果在tombstone或ANR中，继续收集信息

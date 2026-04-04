@@ -53,7 +53,7 @@ class TestKernelParser(unittest.TestCase):
         
         self.assertIsNotNone(event)
         self.assertEqual(event.level, EventLevel.FATAL)
-        self.assertEqual(event.event_type, EventType.CRASH)
+        self.assertEqual(event.event_type, EventType.ERROR)
 
 
 class TestMCUParser(unittest.TestCase):
@@ -70,7 +70,7 @@ class TestMCUParser(unittest.TestCase):
         self.assertEqual(event.source_type, 'mcu')
         self.assertEqual(event.level, EventLevel.INFO)
         self.assertEqual(event.module, 'POWER')
-        self.assertIn('uptime_seconds', event.metadata)
+        self.assertIn('uptime_seconds', event.parsed_fields)
     
     def test_parse_mcu_format2(self):
         """测试MCU格式2"""
@@ -80,7 +80,7 @@ class TestMCUParser(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.level, EventLevel.ERROR)
         self.assertEqual(event.module, 'FOTA')
-        self.assertEqual(event.event_type, EventType.FOTA)
+        self.assertEqual(event.event_type, EventType.FOTA_STAGE)
     
     def test_parse_mcu_format3(self):
         """测试MCU格式3"""
@@ -89,7 +89,7 @@ class TestMCUParser(unittest.TestCase):
         
         self.assertIsNotNone(event)
         self.assertEqual(event.module, 'CAN')
-        self.assertIn('uptime_ms', event.metadata)
+        self.assertIn('uptime_ms', event.parsed_fields)
 
 
 class TestDLTParser(unittest.TestCase):
@@ -106,8 +106,8 @@ class TestDLTParser(unittest.TestCase):
         self.assertEqual(event.source_type, 'dlt')
         self.assertEqual(event.level, EventLevel.INFO)
         self.assertEqual(event.module, 'APP1.CTX1')
-        self.assertIn('ecu_id', event.metadata)
-        self.assertEqual(event.metadata['ecu_id'], 'ECU1')
+        self.assertIn('ecu_id', event.parsed_fields)
+        self.assertEqual(event.parsed_fields['ecu_id'], 'ECU1')
     
     def test_parse_dlt_simple_format(self):
         """测试简化DLT格式"""
@@ -132,9 +132,9 @@ class TestIBDUParser(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.source_type, 'ibdu')
         self.assertEqual(event.module, 'POWER')
-        self.assertEqual(event.event_type, EventType.POWER)
-        self.assertIn('voltage', event.metadata)
-        self.assertEqual(event.metadata['voltage'], 12.5)
+        self.assertEqual(event.event_type, EventType.SYSTEM)
+        self.assertIn('voltage', event.parsed_fields)
+        self.assertEqual(event.parsed_fields['voltage'], 12.5)
     
     def test_parse_ibdu_with_current(self):
         """测试iBDU电流解析"""
@@ -142,8 +142,8 @@ class TestIBDUParser(unittest.TestCase):
         event = self.parser.parse_line(line, 1)
         
         self.assertIsNotNone(event)
-        self.assertIn('current', event.metadata)
-        self.assertEqual(event.metadata['current'], 5.2)
+        self.assertIn('current', event.parsed_fields)
+        self.assertEqual(event.parsed_fields['current'], 5.2)
     
     def test_parse_ibdu_with_temperature(self):
         """测试iBDU温度解析"""
@@ -152,8 +152,8 @@ class TestIBDUParser(unittest.TestCase):
         
         self.assertIsNotNone(event)
         self.assertEqual(event.level, EventLevel.WARN)
-        self.assertIn('temperature', event.metadata)
-        self.assertEqual(event.metadata['temperature'], 85.0)
+        self.assertIn('temperature', event.parsed_fields)
+        self.assertEqual(event.parsed_fields['temperature'], 85.0)
 
 
 class TestVehicleSignalParser(unittest.TestCase):
@@ -168,10 +168,10 @@ class TestVehicleSignalParser(unittest.TestCase):
         
         self.assertIsNotNone(event)
         self.assertEqual(event.source_type, 'vehicle_signal')
-        self.assertIn('signal_name', event.metadata)
-        self.assertEqual(event.metadata['signal_name'], 'VehicleSpeed')
-        self.assertEqual(event.metadata['value'], 60.5)
-        self.assertEqual(event.metadata['unit'], 'km/h')
+        self.assertIn('signal_name', event.parsed_fields)
+        self.assertEqual(event.parsed_fields['signal_name'], 'VehicleSpeed')
+        self.assertEqual(event.parsed_fields['value'], 60.5)
+        self.assertEqual(event.parsed_fields['unit'], 'km/h')
     
     def test_parse_table_format(self):
         """测试表格格式"""
@@ -179,8 +179,8 @@ class TestVehicleSignalParser(unittest.TestCase):
         event = self.parser.parse_line(line, 2)
         
         self.assertIsNotNone(event)
-        self.assertEqual(event.metadata['signal_name'], 'EngineSpeed')
-        self.assertEqual(event.metadata['value'], 3000.0)
+        self.assertEqual(event.parsed_fields['signal_name'], 'EngineSpeed')
+        self.assertEqual(event.parsed_fields['value'], 3000.0)
     
     def test_voltage_warning(self):
         """测试电压异常检测"""
@@ -196,22 +196,22 @@ class TestVehicleSignalParser(unittest.TestCase):
         event = self.parser.parse_line(line, 2)
         
         self.assertIsNotNone(event)
-        self.assertTrue(event.metadata['is_critical'])
+        self.assertTrue(event.parsed_fields['is_critical'])
 
 
 class TestParserRegistry(unittest.TestCase):
     
     def test_all_parsers_registered(self):
         """测试所有解析器都已注册"""
-        # 注册所有解析器
+        # 注册所有解析器(注册类而不是实例)
         registry = ParserRegistry()
-        registry.register('android', AndroidParser())
-        registry.register('fota', FotaParser())
-        registry.register('kernel', KernelParser())
-        registry.register('mcu', MCUParser())
-        registry.register('dlt', DLTParser())
-        registry.register('ibdu', IBDUParser())
-        registry.register('vehicle_signal', VehicleSignalParser())
+        registry.register('android', AndroidParser)
+        registry.register('fota', FotaParser)
+        registry.register('kernel', KernelParser)
+        registry.register('mcu', MCUParser)
+        registry.register('dlt', DLTParser)
+        registry.register('ibdu', IBDUParser)
+        registry.register('vehicle_signal', VehicleSignalParser)
         
         # 验证所有7个解析器都已注册
         self.assertEqual(len(registry._parsers), 7)

@@ -7,6 +7,7 @@ Vehicle Signal Parser
 
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
 from base import BaseParser, ParsedEvent, EventLevel, EventType
 
@@ -15,7 +16,11 @@ class VehicleSignalParser(BaseParser):
     """车辆信号解析器"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            source_type="vehicle_signal",
+            parser_name="parser_vehicle_signal",
+            parser_version="1.0.0"
+        )
         
         # CSV格式: timestamp,signal_name,value,unit
         # 例如: 2024-01-01 10:00:00.123,VehicleSpeed,60.5,km/h
@@ -51,6 +56,36 @@ class VehicleSignalParser(BaseParser):
             'brake': ['BrakeStatus', 'BrakePressure', 'ABSStatus'],
             'steering': ['SteeringAngle', 'SteeringTorque'],
         }
+    
+    def parse_file(
+        self,
+        file_path: Path,
+        time_window: Optional[tuple[datetime, datetime]] = None,
+        max_lines: Optional[int] = None
+    ) -> Iterator[ParsedEvent]:
+        """解析车辆信号文件"""
+        if not file_path.exists():
+            raise FileNotFoundError(f"日志文件不存在: {file_path}")
+        
+        line_number = 0
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line_number += 1
+                line = line.rstrip('\n\r')
+                
+                if not line.strip():
+                    continue
+                
+                event = self.parse_line(line, line_number)
+                
+                if event:
+                    if self._should_skip_line(event.original_ts, time_window):
+                        continue
+                    yield event
+                
+                if max_lines and line_number >= max_lines:
+                    break
     
     def parse_line(
         self,
@@ -115,16 +150,14 @@ class VehicleSignalParser(BaseParser):
                 'is_critical': signal_name in self.critical_signals
             }
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='vehicle_signal',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=category,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata=metadata
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields=metadata
             )
         
         # 无法解析的行
@@ -169,17 +202,17 @@ class VehicleSignalParser(BaseParser):
         """根据信号确定事件类型"""
         # 电源相关
         if category == 'power':
-            return EventType.POWER
+            return EventType.SYSTEM
         
         # 诊断相关
         if 'dtc' in signal_name.lower() or 'fault' in signal_name.lower():
-            return EventType.DIAGNOSTIC
+            return EventType.SYSTEM
         
         # 系统相关
         if 'ignition' in signal_name.lower() or 'key' in signal_name.lower():
             return EventType.SYSTEM
         
-        return EventType.INFO
+        return EventType.LOG
     
     def _determine_level(self, signal_name: str, value: Any) -> EventLevel:
         """根据信号值确定日志级别"""

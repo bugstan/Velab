@@ -7,6 +7,7 @@ iBDU是智能电池断开单元，负责电源管理
 
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterator
 from base import BaseParser, ParsedEvent, EventLevel, EventType
 
@@ -15,7 +16,11 @@ class IBDUParser(BaseParser):
     """iBDU日志解析器"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            source_type="ibdu",
+            parser_name="parser_ibdu",
+            parser_version="1.0.0"
+        )
         
         # iBDU log格式示例:
         # 2024-01-01 10:00:00.123 [POWER] INFO: Battery voltage: 12.5V
@@ -50,6 +55,36 @@ class IBDUParser(BaseParser):
         self.current_pattern = re.compile(r'(\d+\.?\d*)\s*[mM]?A')
         self.temperature_pattern = re.compile(r'(\d+\.?\d*)\s*[°]?C')
         self.percentage_pattern = re.compile(r'(\d+\.?\d*)\s*%')
+    
+    def parse_file(
+        self,
+        file_path: Path,
+        time_window: Optional[tuple[datetime, datetime]] = None,
+        max_lines: Optional[int] = None
+    ) -> Iterator[ParsedEvent]:
+        """解析iBDU日志文件"""
+        if not file_path.exists():
+            raise FileNotFoundError(f"日志文件不存在: {file_path}")
+        
+        line_number = 0
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line_number += 1
+                line = line.rstrip('\n\r')
+                
+                if not line.strip():
+                    continue
+                
+                event = self.parse_line(line, line_number)
+                
+                if event:
+                    if self._should_skip_line(event.original_ts, time_window):
+                        continue
+                    yield event
+                
+                if max_lines and line_number >= max_lines:
+                    break
     
     def parse_line(
         self,
@@ -87,16 +122,14 @@ class IBDUParser(BaseParser):
             # 提取电气参数
             metadata = self._extract_electrical_params(message)
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='ibdu',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata=metadata
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields=metadata
             )
         
         # 尝试简化格式
@@ -124,16 +157,14 @@ class IBDUParser(BaseParser):
             # 提取电气参数
             metadata = self._extract_electrical_params(message)
             
-            return ParsedEvent(
-                timestamp=timestamp,
-                source_type='ibdu',
-                level=level,
+            return self._create_event(
+                original_ts=timestamp,                level=level,
                 event_type=event_type,
                 module=module,
                 message=message,
-                raw=line,
-                line_number=line_number,
-                metadata=metadata
+                raw_snippet=line,
+                raw_line_number=line_number,
+                parsed_fields=metadata
             )
         
         # 无法解析的行
@@ -156,11 +187,11 @@ class IBDUParser(BaseParser):
         # 电源相关（iBDU的主要功能）
         if any(kw in message_lower or kw in module_lower 
                for kw in ['power', 'battery', 'voltage', 'current', 'charge', 'discharge']):
-            return EventType.POWER
+            return EventType.SYSTEM
         
         # FOTA相关
         if any(kw in message_lower for kw in ['fota', 'update', 'flash']):
-            return EventType.FOTA
+            return EventType.FOTA_STAGE
         
         # 系统相关
         if any(kw in message_lower for kw in ['boot', 'init', 'shutdown', 'sleep', 'wake']):
@@ -168,9 +199,9 @@ class IBDUParser(BaseParser):
         
         # 诊断相关
         if any(kw in message_lower for kw in ['diagnostic', 'dtc', 'fault']):
-            return EventType.DIAGNOSTIC
+            return EventType.SYSTEM
         
-        return EventType.INFO
+        return EventType.LOG
     
     def _infer_module(self, message: str) -> str:
         """从消息推断模块名"""
