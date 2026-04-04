@@ -180,14 +180,14 @@
 - [x] **基础UI框架** ✅
   - [x] 聊天式诊断页面（[`web/src/app/page.tsx`](../web/src/app/page.tsx)）
   - [x] 问题输入框（[`web/src/components/InputBar.tsx`](../web/src/components/InputBar.tsx)）
-  - [x] 历史会话列表
+  - [x] 对话历史管理（内存维护，支持场景切换清空）
   - [x] Demo模式/场景切换（[`web/src/components/Header.tsx`](../web/src/components/Header.tsx)）
 
 - [x] **SSE流式渲染** ✅
-  - [x] 基础SSE流式处理
+  - [x] 基础SSE流式处理（[`web/src/app/page.tsx`](../web/src/app/page.tsx:98-280)）
   - [x] 实时消息展示
-  - [x] `<<<THINKING>>>` 标记内容灰色折叠框展示（[`web/src/components/ChatMessage.tsx`](../web/src/components/ChatMessage.tsx:53-63)）
-  - [x] Markdown 格式诊断报告渲染（表格 + 置信度标签）（[`web/src/components/ChatMessage.tsx`](../web/src/components/ChatMessage.tsx:65-77)）
+  - [x] `<<<THINKING>>>` 标记内容灰色折叠框展示（[`web/src/components/ChatMessage.tsx`](../web/src/components/ChatMessage.tsx:55-65)）
+  - [x] Markdown 格式诊断报告渲染（表格 + 置信度标签）（[`web/src/components/ChatMessage.tsx`](../web/src/components/ChatMessage.tsx:68-90)）
 
 - [x] **执行状态 Timeline** ✅
   - [x] ThinkingProcess组件（[`web/src/components/ThinkingProcess.tsx`](../web/src/components/ThinkingProcess.tsx)）
