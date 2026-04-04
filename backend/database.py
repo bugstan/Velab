@@ -70,9 +70,8 @@ class DatabaseManager:
         )
         
         # 异步引擎
-        async_url = settings.DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
         self._async_engine = create_async_engine(
-            async_url,
+            settings.DATABASE_URL_ASYNC,
             poolclass=QueuePool,
             pool_size=pool_size,
             max_overflow=max_overflow,
