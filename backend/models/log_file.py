@@ -54,7 +54,7 @@ class RawLogFile(Base):
     parse_error = Column(Text)
     
     # 元数据(JSONB)
-    metadata = Column(JSON, default=dict)
+    meta_data = Column('metadata', JSON, default=dict)
     
     # 创建时间
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -82,6 +82,6 @@ class RawLogFile(Base):
             'parse_started_at': self.parse_started_at.isoformat() if self.parse_started_at else None,
             'parse_completed_at': self.parse_completed_at.isoformat() if self.parse_completed_at else None,
             'parse_error': self.parse_error,
-            'metadata': self.metadata,
+            'metadata': self.meta_data,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }

@@ -13,8 +13,8 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
 
-from backend.config import settings
-from backend.models.base import Base
+from config import settings
+from models.base import Base
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +69,9 @@ class DatabaseManager:
             echo=echo,
         )
         
-        # 异步引擎
+        # 异步引擎 (不指定poolclass,让SQLAlchemy自动选择AsyncAdaptedQueuePool)
         self._async_engine = create_async_engine(
             settings.DATABASE_URL_ASYNC,
-            poolclass=QueuePool,
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_timeout=pool_timeout,

@@ -48,7 +48,7 @@ class ConfirmedDiagnosis(Base):
     # diagnosis_embedding = Column(Vector(1536))  # 需要pgvector扩展
     
     # 元数据
-    metadata = Column(JSON, default=dict)
+    meta_data = Column('metadata', JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # 关系
@@ -72,6 +72,6 @@ class ConfirmedDiagnosis(Base):
             'evidence_log_ids': self.evidence_log_ids,
             'evidence_jira_ids': self.evidence_jira_ids,
             'evidence_doc_ids': self.evidence_doc_ids,
-            'metadata': self.metadata,
+            'metadata': self.meta_data,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }

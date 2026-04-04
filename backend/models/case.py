@@ -34,8 +34,8 @@ class Case(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # 元数据(JSONB)
-    metadata = Column(JSON, default=dict)
+    # 元数据(JSONB) - 使用meta_data避免与SQLAlchemy保留字冲突
+    meta_data = Column('metadata', JSON, default=dict)
     
     # 关系
     log_files = relationship('RawLogFile', back_populates='case', cascade='all, delete-orphan')
@@ -55,5 +55,5 @@ class Case(Base):
             'status': self.status,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'metadata': self.metadata,
+            'metadata': self.meta_data,
         }
