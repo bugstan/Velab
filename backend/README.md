@@ -10,18 +10,60 @@ FOTA 多域日志智能诊断系统的后端服务，基于 FastAPI 构建，提
 backend/
 ├── main.py                  # FastAPI 应用入口
 ├── config.py                # 统一配置管理
+├── database.py              # 数据库连接管理
+├── db_operations.py         # 数据库批量操作
 ├── requirements.txt         # Python 依赖
 ├── .env.example             # 环境变量配置示例
+├── run_worker.py            # Arq任务队列Worker启动脚本
+├── run_tests.py             # 测试运行脚本
 ├── agents/                  # Agent 实现
 │   ├── base.py              # Agent 基类和注册机制
 │   ├── orchestrator.py      # 编排器
 │   ├── log_analytics.py     # 日志分析 Agent
 │   └── jira_knowledge.py    # Jira 知识库 Agent
-├── services/                # 服务层
+├── api/                     # RESTful API接口层
+│   ├── __init__.py
+│   ├── schemas.py           # Pydantic数据模型
+│   ├── cases.py             # Case管理接口（5个端点）
+│   ├── logs.py              # 日志文件上传接口（2个端点）
+│   ├── parse.py             # 解析任务接口（3个端点）
+│   └── events.py            # 事件查询导出接口（5个端点）
+├── models/                  # SQLAlchemy ORM模型
+│   ├── __init__.py
+│   ├── base.py              # 基础模型类
+│   ├── case.py              # DiagnosisCase模型
+│   ├── log_file.py          # RawLogFile模型
+│   ├── event.py             # DiagnosisEvent模型
+│   └── diagnosis.py         # ConfirmedDiagnosis模型
+├── services/                # 核心服务层
 │   ├── llm.py               # LLM 服务抽象
-│   └── __init__.py
+│   ├── time_alignment.py    # 时间对齐服务
+│   ├── event_normalizer.py  # 事件标准化服务
+│   └── parser/              # 日志解析器插件
+│       ├── base.py          # 解析器基类
+│       ├── parser_android.py    # Android日志解析器
+│       ├── parser_fota.py       # FOTA日志解析器
+│       ├── parser_kernel.py     # Kernel日志解析器
+│       ├── parser_mcu.py        # MCU日志解析器
+│       ├── parser_dlt.py        # DLT日志解析器
+│       ├── parser_ibdu.py       # iBDU日志解析器
+│       └── parser_vehicle_signal.py  # 车辆信号解析器
+├── tasks/                   # Arq异步任务队列
+│   ├── __init__.py
+│   ├── worker.py            # Worker实现和任务定义
+│   ├── client.py            # 任务客户端
+│   └── README.md            # 任务队列使用文档
+├── tests/                   # 测试套件
+│   ├── conftest.py          # 测试配置和fixtures
+│   ├── test_api_cases.py    # Cases API测试（9个测试）
+│   ├── test_api_logs.py     # Logs API测试
+│   ├── test_api_parse.py    # Parse API测试（8个测试）
+│   ├── test_api_events.py   # Events API测试（13个测试）
+│   ├── test_integration.py  # 集成测试（4个测试）
+│   └── README.md            # 测试文档
 ├── common/                  # 公共模块
-│   └── chain_log.py         # 结构化日志
+│   ├── chain_log.py         # 结构化日志
+│   └── redaction.py         # 数据脱敏
 ├── scripts/                 # 部署和启动脚本
 │   ├── deploy.sh            # 生产环境部署脚本
 │   └── start-dev.sh         # 开发环境启动脚本

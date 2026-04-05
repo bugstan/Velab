@@ -71,22 +71,22 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
 export const PRESET_QUESTIONS: PresetQuestion[] = [
   {
     id: "q1",
-    text: "How to install air filters?",
-    icon: "🔧",
+    text: "分析 FOTA 升级失败的根本原因",
+    icon: "🔍",
   },
   {
     id: "q2",
-    text: "How to connect to your phone?",
-    icon: "📱",
+    text: "查询类似 FOTA-9123 的历史案例",
+    icon: "📋",
   },
   {
     id: "q3",
-    text: "How to turn on the comfort driving mode?",
-    icon: "🚗",
+    text: "分析为何 iCGM 模块升级时挂死",
+    icon: "⚠️",
   },
   {
     id: "q4",
-    text: "How to read vehicle signals or alerts?",
-    icon: "📊",
+    text: "MPU 升级包校验失败的常见原因",
+    icon: "📦",
   },
 ];

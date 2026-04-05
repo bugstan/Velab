@@ -465,8 +465,57 @@ async def orchestrate(
                 },
             }
 
+        # Step N: RCA Synthesizer (if we have multiple agent results)
+        if len(agent_results) > 0:
+            synthesizer_step_num = 2 + len(tool_calls)
+            synthesizer = registry.get("rca_synthesizer")
+            
+            if synthesizer:
+                yield {
+                    "type": "step_start",
+                    "step": {
+                        "stepNumber": synthesizer_step_num,
+                        "agentName": synthesizer.display_name,
+                        "status": "running",
+                        "statusText": "Synthesizing Root Cause Analysis...",
+                    },
+                }
+                
+                try:
+                    synthesizer_result = await synthesizer.execute(
+                        task=user_message,
+                        keywords=None,
+                        context={"agent_results": agent_results}
+                    )
+                    
+                    # Add synthesizer result to agent_results
+                    agent_results.append(synthesizer_result)
+                    
+                    yield {
+                        "type": "step_complete",
+                        "step": {
+                            "stepNumber": synthesizer_step_num,
+                            "agentName": synthesizer.display_name,
+                            "status": "completed",
+                            "statusText": "Synthesizing Root Cause Analysis...",
+                            "result": synthesizer_result.detail if synthesizer_result.detail else synthesizer_result.summary,
+                        },
+                    }
+                except Exception as e:
+                    log.exception("[Orchestrator] RCA Synthesizer failed")
+                    yield {
+                        "type": "step_complete",
+                        "step": {
+                            "stepNumber": synthesizer_step_num,
+                            "agentName": synthesizer.display_name,
+                            "status": "completed",
+                            "statusText": "Synthesizing Root Cause Analysis...",
+                            "result": f"综合分析失败: {str(e)}",
+                        },
+                    }
+
     # Final step: Response Generator
-    final_step_num = 2 + len(tool_calls) if tool_calls else 2
+    final_step_num = 2 + len(tool_calls) + (1 if len(agent_results) > 0 and registry.get("rca_synthesizer") else 0) if tool_calls else 2
     yield {
         "type": "step_start",
         "step": {
@@ -562,7 +611,7 @@ async def generate_final_response(
         accumulated = ""
         async for delta in chat_completion_stream(messages, max_tokens=4096):
             accumulated += delta
-            yield {"type": "content_delta", "content": accumulated}
+            yield {"type": "content_delta", "content": delta}
         chain_debug(
             log,
             step="response_generator",
@@ -579,13 +628,16 @@ async def generate_final_response(
         )
         log.exception("[ResponseGenerator] LLM unavailable, using template fallback")
         content = _build_fallback_response(user_message, agent_results)
-        # Stream the fallback content in chunks
-        accumulated = ""
-        for i in range(0, len(content), 30):
-            accumulated = content[: i + 30]
-            yield {"type": "content_delta", "content": accumulated}
-            import asyncio as _aio
-            await _aio.sleep(0.02)
+        # Stream the fallback content by lines to preserve formatting
+        lines = content.split('\n')
+        for line in lines:
+            if line.strip():  # Only send non-empty lines
+                yield {"type": "content_delta", "content": line + '\n'}
+                import asyncio as _aio
+                await _aio.sleep(0.01)
+            else:
+                # Send empty lines to preserve paragraph breaks
+                yield {"type": "content_delta", "content": '\n'}
 
 
 RESPONSE_GENERATOR_PROMPT = """你是一个车辆 FOTA 诊断助手（角色: Technician）。

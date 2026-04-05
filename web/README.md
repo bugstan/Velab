@@ -244,21 +244,41 @@ export default function MyComponent() {
 
 ## 🧪 测试
 
-### 运行测试
+本项目使用 **Vitest 4.1.2** 作为测试框架，配合 React Testing Library 和 MSW 进行组件测试和 API 模拟。
+
+### 测试框架
+
+- **测试框架**: Vitest 4.1.2
+- **组件测试**: @testing-library/react 16.3.2
+- **API 模拟**: MSW (Mock Service Worker) 2.12.14
+- **覆盖率工具**: @vitest/coverage-v8
+- **可视化界面**: @vitest/ui
+
+### 测试命令
 
 ```bash
+# 运行所有测试
 npm test
-# 或
-yarn test
+
+# 监听模式（开发时使用）
+npm run test:watch
+
+# 生成覆盖率报告
+npm run test:coverage
+
+# 可视化测试界面
+npm run test:ui
 ```
 
-### 端到端测试
+### 配置文件
 
-```bash
-npm run test:e2e
-# 或
-yarn test:e2e
-```
+- [`vitest.config.ts`](vitest.config.ts:1) - Vitest 配置文件
+- [`vitest.setup.ts`](vitest.setup.ts:1) - Vitest 设置文件
+
+### 详细测试文档
+
+完整的测试指南、最佳实践和覆盖率要求请参考：
+- **[`README_TESTING.md`](README_TESTING.md:1)** - 完整测试文档 ⭐
 
 ---
 

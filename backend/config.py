@@ -83,9 +83,24 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         """
+        生成 PostgreSQL 同步连接字符串
+        
+        使用 psycopg2 驱动，供 SQLAlchemy ORM 使用。
+        
+        Returns:
+            str: 格式为 postgresql://user:password@host:port/database 的连接串
+        """
+        return (
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+    
+    @property
+    def DATABASE_URL_ASYNC(self) -> str:
+        """
         生成 PostgreSQL 异步连接字符串
         
-        使用 asyncpg 驱动，供后续 RAG 检索和数据持久化功能使用。
+        使用 asyncpg 驱动，供异步操作使用。
         
         Returns:
             str: 格式为 postgresql+asyncpg://user:password@host:port/database 的连接串

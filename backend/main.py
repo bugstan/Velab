@@ -44,12 +44,47 @@ import agents.jira_knowledge  # noqa: F401
 
 from agents.orchestrator import orchestrate
 
+# 导入API路由
+from api import api_router
+
+# 导入数据库管理器
+from database import db_manager
+
 # 初始化日志系统
 setup_logging()
 
 # 创建 FastAPI 应用实例
-app = FastAPI(title="FOTA 智能诊断平台")
+app = FastAPI(
+    title="FOTA 智能诊断平台",
+    description="FOTA多域日志智能诊断系统 - 提供日志解析、时间对齐、事件查询等功能",
+    version="1.0.0"
+)
 log = logging.getLogger(__name__)
+
+# 初始化数据库连接池和任务客户端
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化数据库连接池和任务客户端"""
+    log.info("Initializing database connection pool...")
+    db_manager.initialize()
+    log.info("Database connection pool initialized")
+    
+    log.info("Initializing task client...")
+    from tasks.client import get_task_client
+    await get_task_client()
+    log.info("Task client initialized")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理数据库连接和任务客户端"""
+    log.info("Closing task client...")
+    from tasks.client import close_task_client
+    await close_task_client()
+    log.info("Task client closed")
+    
+    log.info("Closing database connections...")
+    db_manager.close()
+    log.info("Database connections closed")
 
 # 配置 CORS 中间件，允许前端跨域访问
 app.add_middleware(
@@ -58,6 +93,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册API路由
+app.include_router(api_router)
+
+
+@app.get("/")
+async def root():
+    """
+    根路径 - API信息
+    
+    Returns:
+        API基本信息和可用端点
+    """
+    return {
+        "name": "FOTA 智能诊断平台",
+        "version": "1.0.0",
+        "endpoints": {
+            "chat": "/chat - 诊断对话接口(SSE)",
+            "health": "/health - 健康检查",
+            "api": "/api - RESTful API接口",
+            "docs": "/docs - API文档(Swagger UI)",
+            "redoc": "/redoc - API文档(ReDoc)"
+        }
+    }
 
 
 @app.post("/chat")

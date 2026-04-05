@@ -25,7 +25,11 @@
 Velab/
 ├── backend/              # FastAPI 后端服务
 │   ├── agents/           # Agent 实现（Log/Jira/Doc）
-│   ├── services/         # LLM 服务抽象层
+│   ├── api/              # RESTful API接口（15个端点）
+│   ├── models/           # SQLAlchemy ORM模型
+│   ├── services/         # 核心服务（Parser/TimeAlignment/EventNormalizer）
+│   ├── tasks/            # Arq异步任务队列
+│   ├── tests/            # API单元测试和集成测试（34个测试）
 │   ├── scripts/          # 部署和启动脚本
 │   ├── systemd/          # systemd 服务配置
 │   ├── nginx/            # Nginx 反向代理配置
@@ -38,16 +42,21 @@ Velab/
 │   ├── config.yaml       # LiteLLM 模型路由配置
 │   └── README.md         # Gateway 部署文档
 │
-├── web/                  # Next.js 前端（未来）
+├── web/                  # Next.js 前端（已完成）
+│   ├── src/
+│   │   ├── app/          # Next.js App Router
+│   │   ├── components/   # React组件（ChatMessage/ThinkingProcess/SourcePanel等）
+│   │   └── __tests__/    # 前端测试（Vitest + React Testing Library）
+│   └── README.md         # 前端部署文档
 │
 ├── docs/                 # 项目文档
+│   ├── P0任务实施进度报告.md  # 实施进度报告（最新）
 │   ├── AI专家项目分析报告.md
 │   ├── 部署配置完整性检查报告.md
 │   ├── FOTA智能诊断平台_系统设计方案.md
 │   ├── FOTA智能诊断平台_可行性方案（修订版v6）.md
 │   ├── FOTA_LLM_API中转方案.md
-│   ├── LLM_429限流防御方案.md
-│   └── TODO.md           # 任务清单
+│   └── LLM_429限流防御方案.md
 │
 └── scripts/              # 统一部署脚本
     └── deploy-all.sh     # 单机开发环境一键部署
@@ -149,15 +158,22 @@ open http://localhost:8000/docs
 | 模块 | 完成度 | 状态 |
 |------|--------|------|
 | 基础设施与部署 | 100% | ✅ 完成 |
-| 后端核心逻辑 | 30% | 🚧 进行中 |
-| 离线预处理管线 | 0% | 📅 待开始 |
-| 前端交互功能 | 0% | 📅 待开始 |
-| 数据与演示场景 | 0% | 📅 待开始 |
+| 离线预处理管线 | 100% | ✅ 完成 |
+| 数据库与API | 100% | ✅ 完成 |
+| 任务队列集成 | 100% | ✅ 完成 |
+| API测试 | 100% | ✅ 完成 |
+| MVP核心功能 | 100% | ✅ 完成 |
+| 前端交互功能 | 100% | ✅ 完成 |
+| 后端核心逻辑（在线诊断增强） | 70% | 🚧 进行中 |
+| 数据与演示场景 | 40% | 🚧 进行中 |
 | 评测与验收 | 0% | 📅 待开始 |
 
-**总体进度**: 约 **25%**
+**总体进度**: 约 **85%**
 
-详细任务清单请查看：[TODO.md](docs/TODO.md)
+详细任务清单请查看：
+- [TODO.md](docs/TODO.md) - 项目任务清单（最新）
+- [MVP实施总结报告](docs/MVP实施总结报告.md) - MVP实施详细报告
+- [P0任务实施进度报告](docs/P0任务实施进度报告.md) - P0离线预处理管线实施报告
 
 ---
 
@@ -165,7 +181,14 @@ open http://localhost:8000/docs
 
 ### 快速入门
 
-- **[claude.md](claude.md)** - 完整项目文档（开发指南、API 文档、部署指南）⭐ 推荐首先阅读
+- **[CLAUDE.md](CLAUDE.md)** - 完整项目文档（开发指南、API 文档、部署指南）⭐ 推荐首先阅读
+- **[TODO.md](docs/TODO.md)** - 项目任务清单（最新进度）⭐ 推荐查看
+
+### 实施报告
+
+- **[MVP实施总结报告](docs/MVP实施总结报告.md)** - MVP实施详细报告 ⭐ 最新完成
+- [P0任务实施进度报告](docs/P0任务实施进度报告.md) - P0离线预处理管线实施报告
+- [环境安装配置报告](docs/环境安装配置报告.md) - 环境配置详细报告
 
 ### 系统设计
 
@@ -177,6 +200,7 @@ open http://localhost:8000/docs
 
 - [Backend README](backend/README.md) - Backend 部署文档
 - [Gateway README](gateway/README.md) - Gateway 部署文档
+- [Web README](web/README.md) - 前端部署文档
 - [部署配置完整性检查报告](docs/部署配置完整性检查报告.md) - 配置完整性检查
 
 ### 技术方案
@@ -190,14 +214,16 @@ open http://localhost:8000/docs
 
 | 层次 | 技术 |
 |------|------|
-| 后端框架 | Python + FastAPI |
+| 后端框架 | Python 3.12 + FastAPI |
 | AI 编排 | 纯 Python async + LangChain Tool 抽象 |
 | LLM 供应商 | Claude（主力）+ OpenAI（Fallback + Embedding） |
 | 任务队列 | Arq（原生 async/await） |
 | 数据库 | PostgreSQL + pgvector |
 | 对象存储 | MinIO / S3 |
 | 缓存 | Redis |
-| 前端 | Next.js + React + TypeScript |
+| 前端框架 | Next.js 16 + React 19 + TypeScript 6 |
+| 前端样式 | Tailwind CSS 4 |
+| 前端测试 | Vitest 4.1 + React Testing Library 16.3 + MSW 2.12 |
 | 服务部署 | Python Virtualenv + Systemd（反 Docker） |
 
 ---
@@ -231,6 +257,6 @@ open http://localhost:8000/docs
 
 ---
 
-**项目状态**: 🚧 开发中（Sprint 1 已完成，Sprint 2 进行中）  
-**最后更新**: 2026-04-02  
+**项目状态**: 🚧 开发中（MVP已完成，前端UI已完成，后端在线诊断增强进行中）
+**最后更新**: 2026-04-04
 **维护团队**: AI 开发专家
