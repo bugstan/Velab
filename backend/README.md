@@ -20,14 +20,18 @@ backend/
 │   ├── base.py              # Agent 基类和注册机制
 │   ├── orchestrator.py      # 编排器
 │   ├── log_analytics.py     # 日志分析 Agent
-│   └── jira_knowledge.py    # Jira 知识库 Agent
-├── api/                     # RESTful API接口层
+│   ├── jira_knowledge.py    # Jira 知识库 Agent
+│   ├── doc_retrieval.py     # 文档检索 Agent (NEW)
+│   └── rca_synthesizer.py   # RCA 综合分析 Agent
+├── api/                     # RESTful API接口层 (22个端点)
 │   ├── __init__.py
 │   ├── schemas.py           # Pydantic数据模型
 │   ├── cases.py             # Case管理接口（5个端点）
 │   ├── logs.py              # 日志文件上传接口（2个端点）
 │   ├── parse.py             # 解析任务接口（3个端点）
-│   └── events.py            # 事件查询导出接口（5个端点）
+│   ├── events.py            # 事件查询导出接口（5个端点）
+│   ├── feedback.py          # 诊断反馈接口（5个端点）(NEW)
+│   └── metrics.py           # 监控指标接口（2个端点）(NEW)
 ├── models/                  # SQLAlchemy ORM模型
 │   ├── __init__.py
 │   ├── base.py              # 基础模型类
@@ -37,6 +41,11 @@ backend/
 │   └── diagnosis.py         # ConfirmedDiagnosis模型
 ├── services/                # 核心服务层
 │   ├── llm.py               # LLM 服务抽象
+│   ├── vector_search.py     # TF-IDF/向量检索服务 (NEW)
+│   ├── semantic_cache.py    # 语义缓存服务 (NEW)
+│   ├── tool_functions.py    # Agent Tool Use 函数 (NEW)
+│   ├── doc_chunker.py       # PDF/文本切块服务 (NEW)
+│   ├── evaluation.py        # 诊断评测框架 (NEW)
 │   ├── time_alignment.py    # 时间对齐服务
 │   ├── event_normalizer.py  # 事件标准化服务
 │   └── parser/              # 日志解析器插件

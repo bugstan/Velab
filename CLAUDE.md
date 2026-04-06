@@ -16,8 +16,22 @@
 ## 核心架构 & 文件夹说明
 - `backend/`: FastAPI 后端核心。
   - `/agents/`: 所有的 Agent 逻辑。`base.py` 包含注册表。
+    - `log_analytics.py` — 日志分析 Agent
+    - `jira_knowledge.py` — Jira 工单检索 Agent
+    - `doc_retrieval.py` — 技术文档检索 Agent (2026-04-06 新增)
+    - `rca_synthesizer.py` — RCA 综合分析 Agent
+    - `orchestrator.py` — 编排器
   - `/common/`: 全链路日志 (trace_id) 和脱敏 (redaction) 逻辑。
-  - `/services/llm.py`: 统一的 LLM 客户端抽象。
+  - `/services/`: 核心服务层。
+    - `llm.py` — 统一的 LLM 客户端抽象
+    - `vector_search.py` — TF-IDF/向量检索服务 (2026-04-06 新增)
+    - `semantic_cache.py` — 语义缓存服务 (2026-04-06 新增)
+    - `tool_functions.py` — Agent Tool Use 函数 (2026-04-06 新增)
+    - `doc_chunker.py` — PDF/文本切块服务 (2026-04-06 新增)
+    - `evaluation.py` — 诊断评测框架 (2026-04-06 新增)
+  - `/api/`: RESTful API 接口层（22 个端点）。
+    - `feedback.py` — 诊断反馈 API (2026-04-06 新增)
+    - `metrics.py` — Prometheus 监控指标 (2026-04-06 新增)
 - `web/`: Next.js 前端应用。
   - `src/app/`: 页面和路由 (Page & API Routes).
   - `src/components/`: 高复用 React 组件（ChatMessage, ThinkingProcess）.
@@ -60,3 +74,21 @@
 ## AI 记忆管理建议
 - 每次完成重要架构调整或修复了复杂的逻辑 Bug，请在 `CLAUDE.md` 的末尾追加简短的“决策日志 (Decision Log)”，防止后续对话中的 AI 丢失上下文。
 - 当我对你的开发流程提出修正时，请立即更新本文件的具体准则。
+
+---
+
+## Decision Log
+
+### 2026-04-06: Sprint 4 批量实现
+- 迁移 `main.py` 从废弃的 `@app.on_event` 到 `lifespan` context manager
+- 创建 `vector_search.py` — 使用 TF-IDF baseline（不需要 API Key），预留 embedding 接口
+- 创建 `doc_retrieval.py` — 第 3 个 Agent，加入 SCENARIO_AGENT_MAP
+- 实现 3 个 Tool Use 函数（`extract_timeline_events`, `fetch_raw_line_context`, `search_fota_stage_transitions`）
+- RCA Synthesizer 增加 `_validate_citations()` 引用 ID 断言验证
+- 创建 `semantic_cache.py` 的 SHA-256 精确匹配模式
+- 创建 `api/feedback.py`（5 个端点）和 `api/metrics.py`（Prometheus 格式）
+- 创建 `evaluation.py` 评测框架（5 个标准 case，5 维评分）
+- 创建 `doc_chunker.py` 支持 PDF/文本切块（3 种策略）
+- 演示日志扩充至 5 份，Jira 工单扩充至 10 个
+- `vitest.config.ts` 添加覆盖率 thresholds（branches≥70%, functions≥70%, lines≥80%, statements≥80%）
+- 总体进度 80% → 93%

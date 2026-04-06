@@ -106,6 +106,9 @@ class RCASynthesizerAgent(BaseAgent):
         detail_parts.append("## 💡 修复建议\n")
         detail_parts.append(self._generate_recommendations(successful_results))
         
+        # Validate citation references
+        citation_warnings = self._validate_citations(all_sources, successful_results)
+        
         # Add evidence references
         if all_sources:
             detail_parts.append("\n\n## 📚 证据来源\n")
@@ -113,6 +116,11 @@ class RCASynthesizerAgent(BaseAgent):
                 source_type = source.get("type", "unknown")
                 title = source.get("title", "未知来源")
                 detail_parts.append(f"{idx}. [{source_type.upper()}] {title}\n")
+        
+        if citation_warnings:
+            detail_parts.append("\n\n> ⚠️ **引用校验提示**\n")
+            for w in citation_warnings:
+                detail_parts.append(f"> - {w}\n")
         
         return AgentResult(
             agent_name=self.name,
@@ -126,6 +134,7 @@ class RCASynthesizerAgent(BaseAgent):
                 "agent_count": len(agent_results),
                 "successful_count": len(successful_results),
                 "confidence_scores": [r.confidence for r in successful_results],
+                "citation_warnings": citation_warnings,
             }
         )
     
@@ -207,6 +216,63 @@ class RCASynthesizerAgent(BaseAgent):
             )
         
         return "\n\n".join(recommendations)
+
+    @staticmethod
+    def _validate_citations(
+        all_sources: list[dict],
+        agent_results: list,
+    ) -> list[str]:
+        """
+        引用 ID 断言验证
+
+        检查综合报告中引用的 source 是否来自有效的 Agent 结果，
+        以及是否存在孤立引用、重复引用或缺失必要字段。
+
+        Args:
+            all_sources: 合并后的所有引用来源
+            agent_results: 各 Agent 的执行结果
+
+        Returns:
+            list[str]: 验证警告列表（空列表表示全部通过）
+        """
+        warnings = []
+
+        # 1. 检查引用完整性 — 每个 source 必须有 title 和 type
+        for idx, src in enumerate(all_sources, 1):
+            if not src.get("title"):
+                warnings.append(f"引用 #{idx} 缺少 title 字段")
+            if not src.get("type"):
+                warnings.append(f"引用 #{idx} 缺少 type 字段")
+
+        # 2. 检查引用来源一致性 — source 必须来自某个 agent 的 result
+        agent_source_titles = set()
+        for ar in agent_results:
+            for s in (ar.sources or []):
+                agent_source_titles.add(s.get("title", ""))
+
+        for idx, src in enumerate(all_sources, 1):
+            title = src.get("title", "")
+            if title and title not in agent_source_titles:
+                warnings.append(
+                    f"引用 #{idx}「{title}」未在任何 Agent 结果中找到对应来源"
+                )
+
+        # 3. 检查重复引用
+        seen_titles = set()
+        for idx, src in enumerate(all_sources, 1):
+            title = src.get("title", "")
+            if title in seen_titles:
+                warnings.append(f"引用 #{idx}「{title}」重复出现")
+            seen_titles.add(title)
+
+        # 4. 检查无引用的 Agent — 某个 Agent 成功但无 source 引用
+        for ar in agent_results:
+            if ar.success and not ar.sources:
+                warnings.append(
+                    f"Agent「{ar.display_name}」分析成功但未提供引用来源"
+                )
+
+        return warnings
 
 
 registry.register(RCASynthesizerAgent())

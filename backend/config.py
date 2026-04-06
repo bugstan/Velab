@@ -150,9 +150,9 @@ settings = Settings()
 
 # ── 场景化 Agent 映射（Velab 编排层使用）──
 SCENARIO_AGENT_MAP: dict[str, list[str]] = {
-    "fota-diagnostic": ["log_analytics"],
-    "fota-jira": ["log_analytics", "jira_knowledge"],
+    "fota-diagnostic": ["log_analytics", "doc_retrieval"],
+    "fota-jira": ["log_analytics", "jira_knowledge", "doc_retrieval"],
     "fleet-analytics": ["log_analytics"],
-    "ces-demo": ["log_analytics", "jira_knowledge"],
+    "ces-demo": ["log_analytics", "jira_knowledge", "doc_retrieval"],
     "data-acquisitions": ["log_analytics"],
 }
