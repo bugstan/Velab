@@ -1,0 +1,11 @@
+{
+  "name": "velab-toolkit",
+  "version": "1.0.0",
+  "description": "Velab 核心研发与运维工具包，涵盖前端开发、全栈质量保证及 DevOps 自动化运维。为智能代理提供领域专精能力。",
+  "author": "Antigravity Expert",
+  "skills": [
+    "velab-frontend-expert",
+    "velab-qa-engineer",
+    "velab-devops-operator"
+  ]
+}

@@ -396,3 +396,139 @@ def clip_log_by_time_window(
             clipped_lines.append(line)
 
     return "\n".join(clipped_lines)
+
+
+# ── Workspace 工具函数 ──
+
+
+async def read_workspace_file(
+    workspace_path: str,
+    filename: str = "notes.md",
+) -> Dict[str, Any]:
+    """
+    读取工作区文件
+
+    Agent 在执行前调用此工具读取当前诊断任务的
+    工作区文件（如 focus.md / notes.md / todo.md），
+    以理解全局上下文和其他 Agent 的已有发现。
+
+    Args:
+        workspace_path: 工作区根目录路径
+        filename: 要读取的文件名 (默认 notes.md)
+
+    Returns:
+        dict: {
+            "filename": str,
+            "content": str | None,
+            "exists": bool,
+            "size_bytes": int
+        }
+    """
+    file_path = Path(workspace_path) / filename
+    try:
+        if file_path.exists():
+            content = file_path.read_text(encoding="utf-8")
+            return {
+                "filename": filename,
+                "content": content,
+                "exists": True,
+                "size_bytes": len(content.encode("utf-8")),
+            }
+        return {
+            "filename": filename,
+            "content": None,
+            "exists": False,
+            "size_bytes": 0,
+        }
+    except Exception as e:
+        logger.warning("read_workspace_file failed: %s", e)
+        return {
+            "filename": filename,
+            "content": None,
+            "exists": False,
+            "size_bytes": 0,
+            "error": str(e),
+        }
+
+
+async def append_workspace_notes(
+    workspace_path: str,
+    agent_name: str,
+    content: str,
+) -> Dict[str, Any]:
+    """
+    向工作区 notes.md 追加分析发现
+
+    Agent 在完成分析后调用此工具，将关键发现写入
+    notes.md 的专属 section 中。各 Agent 的 section
+    以 ## {agent_name} 为标题隔离，互不干扰。
+
+    Args:
+        workspace_path: 工作区根目录路径
+        agent_name: Agent 显示名称 (用作 section 标题)
+        content: 要追加的 Markdown 格式分析发现
+
+    Returns:
+        dict: {"success": bool, "file": str, "section": str}
+    """
+    from services.workspace_manager import workspace_manager
+
+    # 从路径中提取 task_id
+    ws_dir = Path(workspace_path)
+    task_id = ws_dir.name
+
+    ctx = workspace_manager.get(task_id)
+    if ctx is None:
+        logger.warning("Workspace not found for task_id=%s, skipping notes append", task_id)
+        return {"success": False, "file": "notes.md", "section": agent_name, "reason": "workspace_not_found"}
+
+    success = await workspace_manager.append(ctx, "notes.md", agent_name, content)
+    return {"success": success, "file": "notes.md", "section": agent_name}
+
+
+async def update_todo_status(
+    workspace_path: str,
+    item_text: str,
+    completed: bool = True,
+) -> Dict[str, Any]:
+    """
+    更新工作区 todo.md 中的排查清单状态
+
+    将指定的排查项标记为已完成 [x] 或未完成 [ ]。
+    使用部分文本匹配定位目标行。
+
+    Args:
+        workspace_path: 工作区根目录路径
+        item_text: 排查项文本（部分匹配即可）
+        completed: True 标记为 [x]，False 标记为 [ ]
+
+    Returns:
+        dict: {"success": bool, "item": str, "new_status": str}
+    """
+    todo_path = Path(workspace_path) / "todo.md"
+    new_mark = "[x]" if completed else "[ ]"
+    old_mark = "[ ]" if completed else "[x]"
+
+    try:
+        if not todo_path.exists():
+            return {"success": False, "item": item_text, "reason": "todo.md not found"}
+
+        content = todo_path.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        updated = False
+
+        for i, line in enumerate(lines):
+            if item_text.lower() in line.lower() and old_mark in line:
+                lines[i] = line.replace(old_mark, new_mark, 1)
+                updated = True
+                break
+
+        if updated:
+            todo_path.write_text("\n".join(lines), encoding="utf-8")
+            return {"success": True, "item": item_text, "new_status": new_mark}
+        else:
+            return {"success": False, "item": item_text, "reason": "item_not_found_or_already_set"}
+
+    except Exception as e:
+        logger.warning("update_todo_status failed: %s", e)
+        return {"success": False, "item": item_text, "error": str(e)}

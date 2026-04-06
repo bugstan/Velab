@@ -142,6 +142,10 @@ class Settings(BaseSettings):
         # 场景 B 需区分供应商，此处取第一个可用 Key
         return self.ANTHROPIC_API_KEY or self.OPENAI_API_KEY
 
+    # ── Workspace（诊断工作区沙盒）──
+    WORKSPACE_ENABLED: bool = True  # 是否启用 Markdown 工作区
+    WORKSPACE_MAX_SIZE_MB: int = 1024  # 工作区总容量上限（MB）
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
