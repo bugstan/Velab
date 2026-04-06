@@ -4,12 +4,20 @@ export interface DemoScenario {
   description: string;
 }
 
+export interface WorkspaceUpdate {
+  file: "notes.md" | "todo.md" | "focus.md";
+  agent: string;
+  change: string;          // e.g. "[x] 日志阶段验证完成" or "发现关联工单 FOTA-8765"
+  timestamp: string;       // ISO 8601
+}
+
 export interface AgentStep {
   stepNumber: number;
   agentName: string;
   status: "pending" | "running" | "completed";
   statusText: string;
   result?: string;
+  workspaceUpdates?: WorkspaceUpdate[];  // real-time checklist/notes updates
 }
 
 export interface ThinkingProcessData {

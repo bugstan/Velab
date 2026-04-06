@@ -52,7 +52,7 @@ class DocRetrievalAgent(BaseAgent):
             documents = self._load_documents()
 
             if not documents:
-                return AgentResult(
+                result = AgentResult(
                     agent_name=self.name,
                     display_name=self.display_name,
                     success=False,
@@ -61,6 +61,8 @@ class DocRetrievalAgent(BaseAgent):
                     detail="未找到任何技术文档。请确认文档文件已放置在 data/docs/ 目录中。",
                     sources=[],
                 )
+                await self._write_workspace(context, result)
+                return result
 
             # 使用向量检索服务搜索
             query = task
@@ -70,7 +72,7 @@ class DocRetrievalAgent(BaseAgent):
             results = vector_service.search_documents(query, documents, top_k=5)
 
             if not results:
-                return AgentResult(
+                result = AgentResult(
                     agent_name=self.name,
                     display_name=self.display_name,
                     success=False,
@@ -79,6 +81,8 @@ class DocRetrievalAgent(BaseAgent):
                     detail="在文档库中未检索到与查询相关的技术文档。",
                     sources=[],
                 )
+                await self._write_workspace(context, result)
+                return result
 
             # 构建结果
             detail_parts = ["**检索到的技术文档片段：**\n"]
@@ -100,7 +104,7 @@ class DocRetrievalAgent(BaseAgent):
                     "url": "#",
                 })
 
-            return AgentResult(
+            result = AgentResult(
                 agent_name=self.name,
                 display_name=self.display_name,
                 success=True,
@@ -110,6 +114,23 @@ class DocRetrievalAgent(BaseAgent):
                 sources=sources,
                 raw_data={"matched_count": len(results)},
             )
+            await self._write_workspace(context, result)
+            return result
+
+    async def _write_workspace(self, context: dict | None, result: AgentResult) -> None:
+        """将文档检索结果写入 workspace (可选，降级安全)"""
+        if not context or "workspace_path" not in context:
+            return
+        try:
+            from services.tool_functions import append_workspace_notes, update_todo_status
+            ws_path = context["workspace_path"]
+
+            notes_content = f"**摘要**: {result.summary}\n**置信度**: {result.confidence}\n\n{result.detail or '无结果'}"
+            await append_workspace_notes(ws_path, self.display_name, notes_content)
+
+            await update_todo_status(ws_path, "技术文档匹配", completed=result.success)
+        except Exception as e:
+            log.warning("Workspace write failed in %s: %s", self.name, e)
 
     def _load_documents(self) -> list[dict]:
         """加载文档库"""

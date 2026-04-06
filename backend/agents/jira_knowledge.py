@@ -33,7 +33,7 @@ class JiraKnowledgeAgent(BaseAgent):
             documents = self._search_documents(keywords or [])
 
             if not tickets and not documents:
-                return AgentResult(
+                result = AgentResult(
                     agent_name=self.name,
                     display_name=self.display_name,
                     success=False,
@@ -42,6 +42,8 @@ class JiraKnowledgeAgent(BaseAgent):
                     detail="在知识库中未检索到与查询直接相关的历史工单或文档。建议提供更具体的错误描述或 ECU 名称。",
                     sources=[],
                 )
+                await self._write_workspace(context, result)
+                return result
 
             detail_parts: list[str] = []
             sources: list[dict] = []
@@ -60,7 +62,7 @@ class JiraKnowledgeAgent(BaseAgent):
                     detail_parts.append(f"  摘要: {d['excerpt']}\n")
                     sources.append({"title": d["title"], "type": "pdf", "url": "#"})
 
-            return AgentResult(
+            result = AgentResult(
                 agent_name=self.name,
                 display_name=self.display_name,
                 success=True,
@@ -69,6 +71,23 @@ class JiraKnowledgeAgent(BaseAgent):
                 detail="\n".join(detail_parts),
                 sources=sources,
             )
+            await self._write_workspace(context, result)
+            return result
+
+    async def _write_workspace(self, context: dict | None, result: AgentResult) -> None:
+        """将检索发现写入 workspace (可选，降级安全)"""
+        if not context or "workspace_path" not in context:
+            return
+        try:
+            from services.tool_functions import append_workspace_notes, update_todo_status
+            ws_path = context["workspace_path"]
+
+            notes_content = f"**摘要**: {result.summary}\n**置信度**: {result.confidence}\n\n{result.detail or '无结果'}"
+            await append_workspace_notes(ws_path, self.display_name, notes_content)
+
+            await update_todo_status(ws_path, "历史工单关联", completed=result.success)
+        except Exception as e:
+            log.warning("Workspace write failed in %s: %s", self.name, e)
 
     def _search_tickets(self, keywords: list[str]) -> list[dict]:
         """Search mock Jira tickets by keywords."""

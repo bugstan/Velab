@@ -54,10 +54,28 @@ class RCASynthesizerAgent(BaseAgent):
                     sources=[],
                 )
             
+            # Read workspace notes for supplementary context
+            workspace_notes = self._read_workspace_notes(context)
+            
             # Synthesize results
-            return self._synthesize_results(task, agent_results)
+            return self._synthesize_results(task, agent_results, workspace_notes)
     
-    def _synthesize_results(self, task: str, agent_results: List[AgentResult]) -> AgentResult:
+    def _read_workspace_notes(self, context: dict | None) -> str:
+        """读取工作区 notes.md 作为补充推理上下文（可选，降级安全）"""
+        if not context or "workspace_path" not in context:
+            return ""
+        try:
+            from pathlib import Path
+            notes_path = Path(context["workspace_path"]) / "notes.md"
+            if notes_path.exists():
+                content = notes_path.read_text(encoding="utf-8")
+                log.debug("Workspace notes loaded: %d chars", len(content))
+                return content
+        except Exception as e:
+            log.warning("Failed to read workspace notes: %s", e)
+        return ""
+    
+    def _synthesize_results(self, task: str, agent_results: List[AgentResult], workspace_notes: str = "") -> AgentResult:
         """Synthesize multiple agent results into a comprehensive RCA."""
         
         # Collect successful results

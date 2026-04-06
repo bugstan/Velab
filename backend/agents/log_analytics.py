@@ -32,7 +32,7 @@ class LogAnalyticsAgent(BaseAgent):
             log_content = self._load_logs(keywords)
 
             if not log_content:
-                return AgentResult(
+                result = AgentResult(
                     agent_name=self.name,
                     display_name=self.display_name,
                     success=False,
@@ -41,11 +41,33 @@ class LogAnalyticsAgent(BaseAgent):
                     detail="当前日志目录中没有与查询关键词匹配的日志记录。请确认日志文件已放置在 data/logs/ 目录中。",
                     sources=[],
                 )
+                await self._write_workspace(context, result)
+                return result
 
             # When LLM is connected, send log_content + task to LLM for analysis.
             # For now, use mock analysis based on log content.
             analysis = self._mock_analyze(task, log_content, keywords or [])
+            await self._write_workspace(context, analysis)
             return analysis
+
+    async def _write_workspace(self, context: dict | None, result: AgentResult) -> None:
+        """将分析发现写入 workspace (可选，降级安全)"""
+        if not context or "workspace_path" not in context:
+            return
+        try:
+            from services.tool_functions import append_workspace_notes, update_todo_status
+            ws_path = context["workspace_path"]
+
+            # 写入 notes.md
+            notes_content = f"**摘要**: {result.summary}\n**置信度**: {result.confidence}\n\n{result.detail or '无详细信息'}"
+            await append_workspace_notes(ws_path, self.display_name, notes_content)
+
+            # 更新 todo.md
+            await update_todo_status(ws_path, "日志阶段验证", completed=result.success)
+            if result.success:
+                await update_todo_status(ws_path, "异常模式识别", completed=True)
+        except Exception as e:
+            log.warning("Workspace write failed in %s: %s", self.name, e)
 
     def _load_logs(self, keywords: list[str] | None) -> str:
         """Load log files from data/logs/. Filter by keywords if present."""

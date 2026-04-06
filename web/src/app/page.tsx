@@ -45,13 +45,17 @@ const BACKEND_URL =
  * 定义了后端通过 SSE 推送的各种事件类型
  */
 type SsePayload = {
-  type: string;  // 事件类型：step_start | step_complete | content_delta 等
-  step?: AgentStep;  // Agent 步骤信息
-  stepNumber?: number;  // 步骤编号
-  partialResult?: string;  // 部分结果（用于进度更新）
-  content?: string;  // 内容增量
-  sources?: ChatMessage["sources"];  // 引用来源
-  confidenceLevel?: ChatMessage["confidenceLevel"];  // 置信度
+  type: string;
+  step?: AgentStep;
+  stepNumber?: number;
+  partialResult?: string;
+  content?: string;
+  sources?: ChatMessage["sources"];
+  confidenceLevel?: ChatMessage["confidenceLevel"];
+  // workspace_update fields
+  file?: "notes.md" | "todo.md" | "focus.md";
+  agent?: string;
+  change?: string;
 };
 
 /**
@@ -217,6 +221,31 @@ export default function Home() {
             )
           );
           break;
+
+        case "workspace_update": {
+          // Accumulate workspace updates onto the matching agent step
+          const wsUpdate = {
+            file: data.file ?? "notes.md",
+            agent: data.agent ?? "",
+            change: data.change ?? "",
+            timestamp: new Date().toISOString(),
+          } as import("@/lib/types").WorkspaceUpdate;
+
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantId) return m;
+              const updatedSteps = m.thinking!.steps.map((s) => {
+                if (s.agentName !== data.agent) return s;
+                return {
+                  ...s,
+                  workspaceUpdates: [...(s.workspaceUpdates ?? []), wsUpdate],
+                };
+              });
+              return { ...m, thinking: { ...m.thinking!, steps: updatedSteps } };
+            })
+          );
+          break;
+        }
 
         case "done":
           setIsRunning(false);

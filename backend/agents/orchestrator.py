@@ -6,12 +6,14 @@ import asyncio
 import logging
 import re
 import time
+import uuid
 from typing import AsyncIterator
 
 from agents.base import AgentResult, registry
 from common.chain_log import async_step_timer, chain_debug
 from config import settings, SCENARIO_AGENT_MAP
 from services.llm import chat_completion, chat_completion_stream, parse_tool_calls
+from services.workspace_manager import workspace_manager
 
 log = logging.getLogger(__name__)
 
@@ -279,6 +281,20 @@ async def orchestrate(
     tools_schema = registry.get_tools_schema(agent_names)
     agent_descriptions = registry.get_agent_descriptions(agent_names)
 
+    # Create workspace for this diagnostic task (graceful degradation)
+    task_id = f"diag-{uuid.uuid4().hex[:12]}"
+    ws_ctx = None
+    workspace_path = None
+    if settings.WORKSPACE_ENABLED:
+        ws_ctx = workspace_manager.create(
+            task_id=task_id,
+            user_query=user_message,
+            scenario_id=scenario_id,
+        )
+        if ws_ctx:
+            workspace_path = str(ws_ctx.workspace_dir)
+            chain_debug(log, step="orchestrate.workspace", event="CREATED", task_id=task_id)
+
     # Step 1: Orchestrator decides which agents to call via function calling
     yield {
         "type": "step_start",
@@ -424,9 +440,14 @@ async def orchestrate(
 
         # Execute all agents concurrently
         async def _run_agent(agent, args):
+            # Inject workspace_path into agent context
+            agent_context = {}
+            if workspace_path:
+                agent_context["workspace_path"] = workspace_path
             return await agent.execute(
                 task=args.get("task", ""),
                 keywords=args.get("keywords"),
+                context=agent_context if agent_context else None,
             )
 
         async with async_step_timer(
@@ -453,6 +474,14 @@ async def orchestrate(
             else:
                 ar = result
             agent_results.append(ar)
+
+            # Emit workspace_update SSE events (if workspace was created)
+            if workspace_path:
+                for ws_event in _build_workspace_sse_events(
+                    workspace_path=workspace_path,
+                    agent_display_name=agent.display_name,
+                ):
+                    yield ws_event
 
             yield {
                 "type": "step_complete",
@@ -482,10 +511,15 @@ async def orchestrate(
                 }
                 
                 try:
+                    # Build context with agent_results + workspace_path
+                    rca_context = {"agent_results": agent_results}
+                    if workspace_path:
+                        rca_context["workspace_path"] = workspace_path
+                    
                     synthesizer_result = await synthesizer.execute(
                         task=user_message,
                         keywords=None,
-                        context={"agent_results": agent_results}
+                        context=rca_context,
                     )
                     
                     # Add synthesizer result to agent_results
@@ -561,6 +595,12 @@ async def orchestrate(
         "confidenceLevel": confidence,
     }
     yield {"type": "done"}
+
+    # Cleanup workspace
+    if ws_ctx:
+        workspace_manager.cleanup(task_id, archive=False)
+        chain_debug(log, step="orchestrate.workspace", event="CLEANED", task_id=task_id)
+
     chain_debug(
         log,
         step="orchestrate",
@@ -728,3 +768,77 @@ def _build_fallback_response(user_message: str, agent_results: list[AgentResult]
             parts.append(f"- [{s}](#)")
 
     return "\n".join(parts)
+
+
+def _build_workspace_sse_events(
+    workspace_path: str,
+    agent_display_name: str,
+) -> list[dict]:
+    """
+    读取 workspace 文件，为前端生成 workspace_update SSE 事件列表。
+
+    解析策略：
+    - todo.md: 提取 [x] 和 [ ] 行，生成 checklist 事件
+    - notes.md: 提取该 Agent section 的前几行作为摘要事件
+
+    所有 I/O 异常均静默处理（降级）。
+
+    Args:
+        workspace_path: 工作区根目录路径
+        agent_display_name: Agent 的显示名称（用于 notes.md section 匹配）
+
+    Returns:
+        list[dict]: SSE 事件列表，每项为 {"type": "workspace_update", ...}
+    """
+    from pathlib import Path
+    events: list[dict] = []
+
+    try:
+        ws_dir = Path(workspace_path)
+
+        # ── todo.md: emit completed checklist items ──
+        todo_path = ws_dir / "todo.md"
+        if todo_path.exists():
+            for line in todo_path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("- [x]") or stripped.startswith("- [ ]"):
+                    # 只发射已完成的项目（进度感更强）
+                    if stripped.startswith("- [x]"):
+                        change = stripped[2:]  # "[x] 日志阶段验证"
+                        events.append({
+                            "type": "workspace_update",
+                            "file": "todo.md",
+                            "agent": agent_display_name,
+                            "change": change,
+                        })
+
+        # ── notes.md: emit 该 Agent section 的摘要行 ──
+        notes_path = ws_dir / "notes.md"
+        if notes_path.exists():
+            content = notes_path.read_text(encoding="utf-8")
+            section_marker = f"## {agent_display_name}"
+            if section_marker in content:
+                # 提取 section 内容（到下一个 ## 或文件末尾）
+                start = content.index(section_marker) + len(section_marker)
+                rest = content[start:]
+                next_section = rest.find("\n## ")
+                section_body = rest[:next_section] if next_section >= 0 else rest
+
+                # 提取摘要行（**摘要**: ...）
+                for line in section_body.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("**摘要**:") or stripped.startswith("**Summary**:"):
+                        snippet = stripped.split(":", 1)[-1].strip()[:80]
+                        if snippet:
+                            events.append({
+                                "type": "workspace_update",
+                                "file": "notes.md",
+                                "agent": agent_display_name,
+                                "change": snippet,
+                            })
+                        break
+
+    except Exception as e:
+        log.debug("_build_workspace_sse_events failed (non-critical): %s", e)
+
+    return events
