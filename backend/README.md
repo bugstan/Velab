@@ -41,11 +41,12 @@ backend/
 │   └── diagnosis.py         # ConfirmedDiagnosis模型
 ├── services/                # 核心服务层
 │   ├── llm.py               # LLM 服务抽象
-│   ├── vector_search.py     # TF-IDF/向量检索服务 (NEW)
-│   ├── semantic_cache.py    # 语义缓存服务 (NEW)
-│   ├── tool_functions.py    # Agent Tool Use 函数 (NEW)
-│   ├── doc_chunker.py       # PDF/文本切块服务 (NEW)
-│   ├── evaluation.py        # 诊断评测框架 (NEW)
+│   ├── vector_search.py     # TF-IDF/向量检索服务
+│   ├── semantic_cache.py    # 语义缓存服务
+│   ├── tool_functions.py    # Agent Tool Use 函数 (支持 Workspace 写入)
+│   ├── workspace_manager.py # Agent Markdown 工作区沙盒管理 (NEW)
+│   ├── doc_chunker.py       # PDF/文本切块服务
+│   ├── evaluation.py        # 诊断评测框架 (已支持一键运行)
 │   ├── time_alignment.py    # 时间对齐服务
 │   ├── event_normalizer.py  # 事件标准化服务
 │   └── parser/              # 日志解析器插件
@@ -64,7 +65,8 @@ backend/
 │   └── README.md            # 任务队列使用文档
 ├── tests/                   # 测试套件
 │   ├── conftest.py          # 测试配置和fixtures
-│   ├── test_api_cases.py    # Cases API测试（9个测试）
+│   ├── test_workspace_manager.py # 工作区沙盒功能测试 (17个测试用例)
+│   ├── test_api_cases.py    # Cases API测试
 │   ├── test_api_logs.py     # Logs API测试
 │   ├── test_api_parse.py    # Parse API测试（8个测试）
 │   ├── test_api_events.py   # Events API测试（13个测试）
