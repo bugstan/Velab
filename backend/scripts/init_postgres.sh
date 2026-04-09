@@ -28,7 +28,8 @@ if ! command -v psql &> /dev/null; then
     exit 1
 fi
 
-echo -e "${BLUE}环境检测通过，开始初始化 PostgreSQL 用户与数据库...${NC}"
+function initialize_db() {
+    echo -e "${BLUE}环境检测通过，开始初始化 PostgreSQL 用户与数据库...${NC}"
 
 # 从 .env 中加载变量（如果文件存在）
 ENV_FILE="$(dirname "$0")/../.env"
