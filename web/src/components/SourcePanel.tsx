@@ -8,7 +8,7 @@ interface SourcePanelProps {
 }
 
 export default function SourcePanel({ sources }: SourcePanelProps) {
-  const [selectedSource, setSelectedSource] = useState<Source | null>(null);
+  const [selectedSource, setSelectedSource] = useState<SourceReference | null>(null);
 
   if (sources.length === 0) return null;
 

@@ -67,7 +67,7 @@ echo -e "${GREEN}✓ 部署目录已创建${NC}"
 
 # 4. 复制代码到部署目录
 echo -e "${BLUE}[4/8] 复制代码文件...${NC}"
-rsync -av --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' \
+rsync -av --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
     $BACKEND_DIR/ $DEPLOY_DIR/
 chown -R fota:fota $DEPLOY_DIR
 echo -e "${GREEN}✓ 代码文件已复制并设置权限${NC}"

@@ -47,8 +47,8 @@ chown -R fota-web:fota-web $DEPLOY_DIR
 echo -e "${GREEN}✓ 部署目录 $DEPLOY_DIR 已就绪${NC}"
 
 echo -e "${BLUE}[4/7] 迁移与同步代码文件...${NC}"
-# 同步前排除本地的 node_modules 和构建缓存
-rsync -av --exclude='node_modules' --exclude='.next' $WEB_DIR/ $DEPLOY_DIR/
+# 同步前排除本地的 node_modules 和构建缓存，排除 .env.local 避免覆盖生产配置
+rsync -av --exclude='node_modules' --exclude='.next' --exclude='.env.local' $WEB_DIR/ $DEPLOY_DIR/
 chown -R fota-web:fota-web $DEPLOY_DIR
 echo -e "${GREEN}✓ 代码迁移完成并设置权限${NC}"
 
