@@ -12,6 +12,7 @@ model_list:
     litellm_params:
       model: anthropic/claude-3-5-haiku-20241022
       api_key: os.environ/ANTHROPIC_API_KEY
+      api_base: os.environ/UPSTREAM_API_BASE
       max_tokens: 1024
     model_info:
       description: "意图路由 — Claude Haiku 主力"
@@ -20,6 +21,7 @@ model_list:
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
+      api_base: os.environ/UPSTREAM_API_BASE
       max_tokens: 1024
     model_info:
       description: "意图路由 — OpenAI Fallback"
@@ -32,6 +34,7 @@ model_list:
     litellm_params:
       model: anthropic/claude-3-5-sonnet-20241022
       api_key: os.environ/ANTHROPIC_API_KEY_1
+      api_base: os.environ/UPSTREAM_API_BASE
       rpm: 50                                    # 单 Key RPM 限制
       tpm: 400000                                # 单 Key TPM 限制
     model_info:

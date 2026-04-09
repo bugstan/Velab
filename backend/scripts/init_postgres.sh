@@ -69,5 +69,22 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 --username postgres <<-EOSQL
     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\\gexec
 EOSQL
 
-echo -e "${GREEN}✓ 数据库及用户基础设施准备完毕！${NC}"
-echo -e "${YELLOW}提示: 如果还需要 pgvector 等高阶扩展库，请根据需要连接数据库执行 'CREATE EXTENSION vector;'${NC}"
+    echo -e "${GREEN}✓ 数据库及用户基础设施准备完毕！${NC}"
+    echo -e "${YELLOW}重要提示：${NC}"
+    echo -e "  1. 如果连接失败，请检查 /etc/postgresql/<version>/main/pg_hba.conf 是否允许 md5/scram 认证。"
+    echo -e "  2. 默认 Ubuntu 可能使用 Peer 认证，建议将 127.0.0.1 的 IPv4 验证方式改为 md5。"
+    echo -e "  3. 如果还需要高级检索，请手动执行: CREATE EXTENSION vector;"
+    return 0
+}
+
+# ============================================================
+# 主逻辑
+# ============================================================
+
+# 检查服务状态
+if ! systemctl is-active --quiet postgresql && ! service postgresql status > /dev/null 2>&1; then
+    echo -e "${RED}警告: PostgreSQL 服务并未运行。尝试自动启动...${NC}"
+    systemctl start postgresql || service postgresql start || true
+fi
+
+initialize_db
