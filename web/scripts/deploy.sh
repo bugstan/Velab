@@ -78,7 +78,8 @@ if [ -f "$WEB_DIR/systemd/fota-web.service" ]; then
     cp $WEB_DIR/systemd/fota-web.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable fota-web
-    echo -e "${GREEN}✓ front-end systemd 服务已挂载并设置为开机自启${NC}"
+    systemctl restart fota-web
+    echo -e "${GREEN}✓ front-end systemd 服务已挂载、自启并重启加载新版本${NC}"
 else
     echo -e "${RED}无法找到 web/systemd/fota-web.service 服务描述文件${NC}"
 fi

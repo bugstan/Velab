@@ -126,7 +126,8 @@ if [ -f "$BACKEND_DIR/systemd/fota-backend.service" ]; then
     cp $BACKEND_DIR/systemd/fota-backend.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable fota-backend
-    echo -e "${GREEN}✓ systemd 服务已安装并启用${NC}"
+    systemctl restart fota-backend
+    echo -e "${GREEN}✓ systemd 服务已安装、启用并重启${NC}"
 else
     echo -e "${YELLOW}⚠ systemd 服务文件不存在，跳过安装${NC}"
 fi
