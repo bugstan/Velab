@@ -69,7 +69,8 @@ echo -e "${GREEN}✓ 部署目录已创建${NC}"
 echo -e "${BLUE}[4/8] 复制代码文件...${NC}"
 rsync -av --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' \
     $BACKEND_DIR/ $DEPLOY_DIR/
-echo -e "${GREEN}✓ 代码文件已复制${NC}"
+chown -R fota:fota $DEPLOY_DIR
+echo -e "${GREEN}✓ 代码文件已复制并设置权限${NC}"
 
 # 5. 创建 Python 虚拟环境并安装依赖
 echo -e "${BLUE}[5/8] 配置 Python 虚拟环境...${NC}"

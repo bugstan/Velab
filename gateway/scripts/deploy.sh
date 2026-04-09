@@ -64,7 +64,8 @@ echo -e "${GREEN}✓ 部署目录已创建${NC}"
 # 4. 复制配置文件到部署目录
 echo -e "${BLUE}[4/7] 复制配置文件...${NC}"
 cp $GATEWAY_DIR/config.yaml $DEPLOY_DIR/
-echo -e "${GREEN}✓ config.yaml 已复制${NC}"
+chown -R litellm:litellm $DEPLOY_DIR
+echo -e "${GREEN}✓ config.yaml 已复制并设置权限${NC}"
 
 # 5. 创建 Python 虚拟环境并安装 LiteLLM
 echo -e "${BLUE}[5/7] 配置 Python 虚拟环境...${NC}"
