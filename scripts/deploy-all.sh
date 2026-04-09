@@ -127,29 +127,48 @@ if [ -f "/opt/fota-backend/.env" ]; then
     fi
 fi
 
-# 配置 Web (去除 baked-in 隐患，统一走相对路径代理)
+# 配置 Web (闭环解决浏览器侧的 localhost:8000 陷阱)
 if [ -f "/opt/fota-web/.env.local" ]; then
-    # 强制将 BACKEND_URL 指向本地，因为 Next.js 服务端就在本地运行
+    # (1) Server-side: 指向 127.0.0.1 (Next.js 服务端代理用)
     sed -i "s|^BACKEND_URL=.*|BACKEND_URL=http://127.0.0.1:8000|" /opt/fota-web/.env.local
-    echo -e "${GREEN}✓ Web 服务端代理指向已收束至本地后端${NC}"
+    
+    # (2) Client-side: 指向外部真实域名 (防止浏览器访问 localhost)
+    if [ "$SERVER_DOMAIN" = "localhost" ]; then
+        sed -i "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000|" /opt/fota-web/.env.local
+    else
+        # 配合 Nginx 模板中的 /backend-api 路由实现单入口访问
+        sed -i "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_DOMAIN/backend-api|" /opt/fota-web/.env.local
+    fi
+    echo -e "${GREEN}✓ Web 环境变量已完成内外网地址对账闭环${NC}"
 fi
 
-# 6. (可选) 配置 Nginx 反向代理
+# 6. (可选) 配置 Nginx 反向代理 - 适配 conf.d 和 sites-enabled
 if command -v nginx &> /dev/null; then
-    echo -e "${BLUE}[附加步] 检测到 Nginx，正在尝试配置反向代理单入口...${NC}"
-    NGINX_CONF="/etc/nginx/sites-available/velab.conf"
+    echo -e "${BLUE}[附加步] 检测到 Nginx，正在尝试配置最优反向代理通路...${NC}"
     NGINX_TEMPLATE="$PROJECT_DIR/scripts/nginx/velab.conf.template"
     
-    if [ -f "$NGINX_TEMPLATE" ]; then
-        cp "$NGINX_TEMPLATE" "$NGINX_CONF"
-        sed -i "s/DOMAIN_OR_IP/$SERVER_DOMAIN/g" "$NGINX_CONF"
-        ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/"
+    # 路径探测：优先使用 conf.d (现代标准)，回退使用 sites-available (Debian/Ubuntu 传统)
+    if [ -d "/etc/nginx/conf.d" ]; then
+        NGINX_CONF_DEST="/etc/nginx/conf.d/velab.conf"
+    elif [ -d "/etc/nginx/sites-available" ]; then
+        NGINX_CONF_DEST="/etc/nginx/sites-available/velab.conf"
+        NGINX_ENABLED_LINK="/etc/nginx/sites-enabled/velab.conf"
+    fi
+
+    if [ -n "$NGINX_CONF_DEST" ] && [ -f "$NGINX_TEMPLATE" ]; then
+        cp "$NGINX_TEMPLATE" "$NGINX_CONF_DEST"
+        sed -i "s/DOMAIN_OR_IP/$SERVER_DOMAIN/g" "$NGINX_CONF_DEST"
         
+        # 处理 sites-enabled 软链接
+        if [ -n "$NGINX_ENABLED_LINK" ]; then
+            ln -sf "$NGINX_CONF_DEST" "$NGINX_ENABLED_LINK"
+        fi
+
         if nginx -t > /dev/null 2>&1; then
             systemctl reload nginx
             echo -e "${GREEN}✓ Nginx 统一入口配置成功: http://$SERVER_DOMAIN${NC}"
         else
-            echo -e "${RED}⚠ Nginx 配置检查失败，请手动检查 $NGINX_CONF${NC}"
+            echo -e "${RED}⚠ Nginx 配置文件语法错误，已保留在 $NGINX_CONF_DEST 请手动检查${NC}"
         fi
     fi
 fi
