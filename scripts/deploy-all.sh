@@ -98,11 +98,26 @@ else
     echo -e "${RED}错误: Web 前端部署脚本不存在${NC}"
 fi
 
-# 5. 配置部署模式
-echo -e "${BLUE}[5/5] 配置部署模式...${NC}"
+# 5. 配置部署模式与同步内部鉴权密钥
+echo -e "${BLUE}[5/5] 配置系统参数与自动对账...${NC}"
 if [ -f "/opt/fota-backend/.env" ]; then
     sed -i "s/^DEPLOYMENT_MODE=.*/DEPLOYMENT_MODE=$DEPLOYMENT_MODE/" /opt/fota-backend/.env
     echo -e "${GREEN}✓ Backend 部署模式已设置为 $DEPLOYMENT_MODE${NC}"
+
+    # 仅场景 A 需要自动对暗号
+    if [ "$DEPLOYMENT_MODE" = "A" ] && [ -f "/opt/litellm-proxy/.env" ]; then
+        echo -e "${BLUE}检测到网关模式，正在自动同步内部鉴权密钥...${NC}"
+        # 生成一个随机的高强度 Key (如果目前还是占位符的话)
+        CURRENT_KEY=$(grep "^LITELLM_MASTER_KEY=" /opt/litellm-proxy/.env | cut -d'=' -f2)
+        if [[ "$CURRENT_KEY" == *"xxxx"* ]] || [ -z "$CURRENT_KEY" ]; then
+            NEW_KEY="sk-fota-$(openssl rand -hex 16)"
+            sed -i "s/^LITELLM_MASTER_KEY=.*/LITELLM_MASTER_KEY=$NEW_KEY/" /opt/litellm-proxy/.env
+            sed -i "s/^LITELLM_API_KEY=.*/LITELLM_API_KEY=$NEW_KEY/" /opt/fota-backend/.env
+            echo -e "${GREEN}✓ 已自动生成并同步高强度内部鉴权密钥${NC}"
+        else
+            echo -e "${YELLOW}⚠ 检测到已有自定义密钥，跳过自动覆盖${NC}"
+        fi
+    fi
 fi
 
 echo ""
