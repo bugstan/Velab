@@ -121,7 +121,7 @@ except Exception as e:
 '" || true
 
 # 8. 安装 systemd 服务
-echo -e "${BLUE}[8/8] 安装 systemd 服务...${NC}"
+echo -e "${BLUE}[8/9] 安装 systemd 服务...${NC}"
 if [ -f "$BACKEND_DIR/systemd/fota-backend.service" ]; then
     cp $BACKEND_DIR/systemd/fota-backend.service /etc/systemd/system/
     systemctl daemon-reload
@@ -132,8 +132,23 @@ else
     echo -e "${YELLOW}⚠ systemd 服务文件不存在，跳过安装${NC}"
 fi
 
-# 设置目录权限
+# 9. 最终权限自检
+echo -e "${BLUE}[9/9] 执行部署终态权限自检...${NC}"
+# 从 .env 读取 STORAGE_ROOT (默认回退)
+LOADED_STORAGE=$(grep "^STORAGE_ROOT=" $DEPLOY_DIR/.env | cut -d'=' -f2 || echo "/opt/fota-backend/data")
+mkdir -p $LOADED_STORAGE/logs
 chown -R fota:fota $DEPLOY_DIR
+
+# 核心检查：尝试以 fota 用户身份进行写测试
+if sudo -u fota touch "$LOADED_STORAGE/logs/.permissions_check" 2>/dev/null; then
+    rm -f "$LOADED_STORAGE/logs/.permissions_check"
+    echo -e "${GREEN}✓ 权限校验通过: 用户 fota 拥有对存储目录的写入权限${NC}"
+else
+    echo -e "${RED}❌ 权限校验失败: 用户 fota 无法写入 $LOADED_STORAGE/logs${NC}"
+    echo -e "${YELLOW}建议解决建议: 执行 'chown -R fota:fota $LOADED_STORAGE'${NC}"
+    exit 1
+fi
+
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
