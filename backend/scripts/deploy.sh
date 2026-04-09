@@ -35,19 +35,24 @@ echo -e "  - Backend 源目录: $BACKEND_DIR"
 echo -e "  - 部署目标目录: $DEPLOY_DIR"
 echo ""
 
-# 1. 检查依赖
-echo -e "${BLUE}[1/7] 检查系统依赖...${NC}"
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}错误: Python3 未安装${NC}"
-    echo -e "${YELLOW}请运行: sudo apt install python3 python3-venv python3-pip${NC}"
-    exit 1
+# 1. 检查并自动安装系统基础依赖
+echo -e "${BLUE}[1/8] 检查并自动安装系统环境级依赖 (Python, PostgreSQL, Redis)...${NC}"
+# 更新 apt 缓存并安装基础包
+if ! command -v python3 &> /dev/null || ! command -v psql &> /dev/null || ! command -v redis-server &> /dev/null; then
+    echo -e "${YELLOW}检测到部分基础设施缺失，正在自动执行 apt install...${NC}"
+    apt-get update -y
+    apt-get install -y python3 python3-venv python3-pip postgresql postgresql-contrib redis-server
 fi
 
+# 启动并使能底层数据库/缓存服务
+systemctl enable --now redis-server
+systemctl enable --now postgresql
+
 PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-echo -e "${GREEN}✓ Python3 已安装 (版本: $PYTHON_VERSION)${NC}"
+echo -e "${GREEN}✓ 基础环境已就绪 (Python版本: $PYTHON_VERSION, PostgreSQL与Redis已配置)${NC}"
 
 # 2. 创建专用系统用户
-echo -e "${BLUE}[2/7] 创建系统用户...${NC}"
+echo -e "${BLUE}[2/8] 创建系统用户...${NC}"
 if ! id "fota" &>/dev/null; then
     useradd -r -s /sbin/nologin -d $DEPLOY_DIR fota
     echo -e "${GREEN}✓ 系统用户 'fota' 已创建${NC}"
@@ -56,18 +61,18 @@ else
 fi
 
 # 3. 创建部署目录
-echo -e "${BLUE}[3/7] 创建部署目录...${NC}"
+echo -e "${BLUE}[3/8] 创建部署目录...${NC}"
 mkdir -p $DEPLOY_DIR/{logs,data}
 echo -e "${GREEN}✓ 部署目录已创建${NC}"
 
 # 4. 复制代码到部署目录
-echo -e "${BLUE}[4/7] 复制代码文件...${NC}"
+echo -e "${BLUE}[4/8] 复制代码文件...${NC}"
 rsync -av --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' \
     $BACKEND_DIR/ $DEPLOY_DIR/
 echo -e "${GREEN}✓ 代码文件已复制${NC}"
 
 # 5. 创建 Python 虚拟环境并安装依赖
-echo -e "${BLUE}[5/7] 配置 Python 虚拟环境...${NC}"
+echo -e "${BLUE}[5/8] 配置 Python 虚拟环境...${NC}"
 if [ ! -d "$DEPLOY_DIR/venv" ]; then
     sudo -u fota python3 -m venv $DEPLOY_DIR/venv
     echo -e "${GREEN}✓ 虚拟环境已创建${NC}"
@@ -79,7 +84,7 @@ sudo -u fota $DEPLOY_DIR/venv/bin/pip install -r $DEPLOY_DIR/requirements.txt
 echo -e "${GREEN}✓ Python 依赖已安装${NC}"
 
 # 6. 配置环境变量
-echo -e "${BLUE}[6/7] 配置环境变量...${NC}"
+echo -e "${BLUE}[6/8] 配置环境变量...${NC}"
 if [ ! -f "$DEPLOY_DIR/.env" ]; then
     if [ -f "$DEPLOY_DIR/.env.example" ]; then
         cp $DEPLOY_DIR/.env.example $DEPLOY_DIR/.env
@@ -96,8 +101,26 @@ fi
 chmod 600 $DEPLOY_DIR/.env
 chown fota:fota $DEPLOY_DIR/.env
 
-# 7. 安装 systemd 服务
-echo -e "${BLUE}[7/7] 安装 systemd 服务...${NC}"
+# 7. 初始化业务库表结构 (Schema)
+echo -e "${BLUE}[7/8] 初始化业务数据库表结构...${NC}"
+# 执行原生 SQL 实例初始化 (包含创建初始账号和关联数据库主壳)
+if [ -f "$BACKEND_DIR/scripts/init_postgres.sh" ]; then
+    bash "$BACKEND_DIR/scripts/init_postgres.sh"
+fi
+
+# 利用 try...except 防止因为数据库未运行引发报错断融（容错机制）
+sudo -u fota sh -c "cd $DEPLOY_DIR && venv/bin/python -c '
+try:
+    from database import db_manager
+    db_manager.initialize()
+    db_manager.create_tables()
+    print(\"✓ 业务库表结构生成完毕。\")
+except Exception as e:
+    print(f\"⚠️ 暂无法连接数据库建表。请确保 PostgreSQL 服务运转正常，若刚部署请修改好 .env 后手动重试。\")
+'" || true
+
+# 8. 安装 systemd 服务
+echo -e "${BLUE}[8/8] 安装 systemd 服务...${NC}"
 if [ -f "$BACKEND_DIR/systemd/fota-backend.service" ]; then
     cp $BACKEND_DIR/systemd/fota-backend.service /etc/systemd/system/
     systemctl daemon-reload

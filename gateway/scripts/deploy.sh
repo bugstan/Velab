@@ -58,6 +58,7 @@ fi
 # 3. 创建部署目录
 echo -e "${BLUE}[3/7] 创建部署目录...${NC}"
 mkdir -p $DEPLOY_DIR/logs
+chown -R litellm:litellm $DEPLOY_DIR
 echo -e "${GREEN}✓ 部署目录已创建${NC}"
 
 # 4. 复制配置文件到部署目录

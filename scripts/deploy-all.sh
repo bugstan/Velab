@@ -33,6 +33,7 @@ fi
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 GATEWAY_DIR="$PROJECT_DIR/gateway"
+WEB_DIR="$PROJECT_DIR/web"
 
 echo -e "${BLUE}项目目录: $PROJECT_DIR${NC}"
 echo ""
@@ -54,7 +55,7 @@ echo -e "${GREEN}✓ 已选择场景 $DEPLOYMENT_MODE${NC}"
 echo ""
 
 # 1. 检查依赖
-echo -e "${BLUE}[1/4] 检查系统依赖...${NC}"
+echo -e "${BLUE}[1/5] 检查系统环境...${NC}"
 if ! command -v python3 &> /dev/null; then
     echo -e "${RED}错误: Python3 未安装${NC}"
     exit 1
@@ -62,7 +63,7 @@ fi
 echo -e "${GREEN}✓ Python3 已安装${NC}"
 
 # 2. 部署 Backend
-echo -e "${BLUE}[2/4] 部署 Backend...${NC}"
+echo -e "${BLUE}[2/5] 部署 Backend...${NC}"
 if [ -f "$BACKEND_DIR/scripts/deploy.sh" ]; then
     cd "$BACKEND_DIR"
     bash scripts/deploy.sh
@@ -74,7 +75,7 @@ fi
 
 # 3. 部署 Gateway（仅场景 A）
 if [ "$DEPLOYMENT_MODE" = "A" ]; then
-    echo -e "${BLUE}[3/4] 部署 Gateway...${NC}"
+    echo -e "${BLUE}[3/5] 部署 Gateway...${NC}"
     if [ -f "$GATEWAY_DIR/scripts/deploy.sh" ]; then
         cd "$GATEWAY_DIR"
         bash scripts/deploy.sh
@@ -84,11 +85,21 @@ if [ "$DEPLOYMENT_MODE" = "A" ]; then
         exit 1
     fi
 else
-    echo -e "${BLUE}[3/4] 跳过 Gateway 部署（场景 B 不需要）${NC}"
+    echo -e "${BLUE}[3/5] 跳过 Gateway 部署（场景 B 不需要）${NC}"
 fi
 
-# 4. 配置部署模式
-echo -e "${BLUE}[4/4] 配置部署模式...${NC}"
+# 4. 部署 Web 前端
+echo -e "${BLUE}[4/5] 部署 Web 前端...${NC}"
+if [ -f "$WEB_DIR/scripts/deploy.sh" ]; then
+    cd "$WEB_DIR"
+    bash scripts/deploy.sh
+    echo -e "${GREEN}✓ Web 前端部署完成${NC}"
+else
+    echo -e "${RED}错误: Web 前端部署脚本不存在${NC}"
+fi
+
+# 5. 配置部署模式
+echo -e "${BLUE}[5/5] 配置部署模式...${NC}"
 if [ -f "/opt/fota-backend/.env" ]; then
     sed -i "s/^DEPLOYMENT_MODE=.*/DEPLOYMENT_MODE=$DEPLOYMENT_MODE/" /opt/fota-backend/.env
     echo -e "${GREEN}✓ Backend 部署模式已设置为 $DEPLOYMENT_MODE${NC}"
@@ -114,10 +125,12 @@ if [ "$DEPLOYMENT_MODE" = "A" ]; then
     echo -e "${YELLOW}3. 启动服务:${NC}"
     echo -e "   sudo systemctl start litellm"
     echo -e "   sudo systemctl start fota-backend"
+    echo -e "   sudo systemctl start fota-web"
     echo ""
     echo -e "${YELLOW}4. 检查状态:${NC}"
     echo -e "   sudo systemctl status litellm"
     echo -e "   sudo systemctl status fota-backend"
+    echo -e "   sudo systemctl status fota-web"
 else
     echo -e "${BLUE}场景 B 部署完成，下一步操作:${NC}"
     echo ""
@@ -127,9 +140,11 @@ else
     echo ""
     echo -e "${YELLOW}2. 启动服务:${NC}"
     echo -e "   sudo systemctl start fota-backend"
+    echo -e "   sudo systemctl start fota-web"
     echo ""
     echo -e "${YELLOW}3. 检查状态:${NC}"
     echo -e "   sudo systemctl status fota-backend"
+    echo -e "   sudo systemctl status fota-web"
 fi
 
 echo ""
