@@ -134,10 +134,17 @@ fi
 
 # 9. 最终权限自检
 echo -e "${BLUE}[9/9] 执行部署终态权限自检...${NC}"
-# 从 .env 读取 STORAGE_ROOT (默认回退)
-LOADED_STORAGE=$(grep "^STORAGE_ROOT=" $DEPLOY_DIR/.env | cut -d'=' -f2 || echo "/opt/fota-backend/data")
-mkdir -p $LOADED_STORAGE/logs
+# 从 .env 读取 STORAGE_ROOT (处理空值并回退)
+LOADED_STORAGE=$(grep "^STORAGE_ROOT=" "$DEPLOY_DIR/.env" | cut -d'=' -f2 | xargs || echo "")
+if [ -z "$LOADED_STORAGE" ]; then
+    LOADED_STORAGE="/opt/fota-backend/data"
+fi
+mkdir -p "$LOADED_STORAGE/logs"
 chown -R fota:fota $DEPLOY_DIR
+# 如果存储目录在外部（非 DEPLOY_DIR），也需确保权限
+if [[ "$LOADED_STORAGE" != "$DEPLOY_DIR"* ]]; then
+    chown -R fota:fota "$LOADED_STORAGE"
+fi
 
 # 核心检查：尝试以 fota 用户身份进行写测试
 if sudo -u fota touch "$LOADED_STORAGE/logs/.permissions_check" 2>/dev/null; then
