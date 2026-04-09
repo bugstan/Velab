@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     LITELLM_BASE_URL: Optional[str] = "http://127.0.0.1:4000/v1"
     LITELLM_API_KEY: Optional[str] = "sk-fota-master-key"
 
+    # ── 存储配置 ──
+    # 日志文件存储根目录
+    STORAGE_ROOT: str = "/opt/fota-backend/data"
+
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
 
