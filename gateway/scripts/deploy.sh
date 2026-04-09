@@ -75,10 +75,10 @@ if [ ! -d "$DEPLOY_DIR/venv" ]; then
     echo -e "${GREEN}✓ 虚拟环境已创建${NC}"
 fi
 
-echo -e "${BLUE}安装 LiteLLM...${NC}"
+echo -e "${BLUE}安装 LiteLLM 及其扩展依赖 (Prometheus)...${NC}"
 sudo -u litellm $DEPLOY_DIR/venv/bin/pip install --upgrade pip
-sudo -u litellm $DEPLOY_DIR/venv/bin/pip install 'litellm[proxy]'
-echo -e "${GREEN}✓ LiteLLM 已安装${NC}"
+sudo -u litellm $DEPLOY_DIR/venv/bin/pip install 'litellm[proxy]' prometheus-client
+echo -e "${GREEN}✓ LiteLLM 及其依赖已安装${NC}"
 
 # 验证安装
 LITELLM_VERSION=$($DEPLOY_DIR/venv/bin/litellm --version 2>&1 | head -n 1)
