@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
 
     # ── LLM 配置 ──
-    LITELLM_BASE_URL: Optional[str] = "https://gateway.fota.com/v1"
+    LITELLM_BASE_URL: Optional[str] = "http://127.0.0.1:4000/v1"
     LITELLM_API_KEY: Optional[str] = "sk-fota-master-key"
 
     ANTHROPIC_API_KEY: Optional[str] = None
