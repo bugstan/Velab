@@ -1,0 +1,39 @@
+# ============================================================
+# FOTA 智能诊断平台 - Nginx 反向代理配置模板
+# ============================================================
+# 将此文件拷贝至 /etc/nginx/sites-available/ 并软链接至 sites-enabled/
+# 替换 DOMAIN_OR_IP 为您的实际域名或公网 IP
+
+server {
+    listen 80;
+    server_name DOMAIN_OR_IP;
+
+    # 1. 前端页面路由 (Next.js)
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # 2. 后端 API 代理层 (Next.js API Routes 内部调用的接口)
+    # 给前端 page.tsx 中的 fetch('/api/chat') 使用
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # ⚠️ 特殊处理：如果是直接绕过前端访问后端端口的需求
+    # 场景：用于调试或外部直接调用 FastAPI
+    location /backend-api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}

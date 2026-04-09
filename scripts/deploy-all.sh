@@ -54,6 +54,14 @@ DEPLOYMENT_MODE=$(echo "$DEPLOYMENT_MODE" | tr '[:lower:]' '[:upper:]')
 echo -e "${GREEN}✓ 已选择场景 $DEPLOYMENT_MODE${NC}"
 echo ""
 
+# 询问访问域名/IP
+echo -e "${BLUE}请输入该平台的访问地址（域名或公网IP）:${NC}"
+echo -e "${YELLOW}提示: 如果仅本地测试可直接回车使用 localhost${NC}"
+read -p "访问地址 [localhost]: " SERVER_DOMAIN
+SERVER_DOMAIN=${SERVER_DOMAIN:-localhost}
+echo -e "${GREEN}✓ 访问地址已设置为: $SERVER_DOMAIN${NC}"
+echo ""
+
 # 1. 检查依赖
 echo -e "${BLUE}[1/5] 检查系统环境...${NC}"
 if ! command -v python3 &> /dev/null; then
@@ -98,24 +106,50 @@ else
     echo -e "${RED}错误: Web 前端部署脚本不存在${NC}"
 fi
 
-# 5. 配置部署模式与同步内部鉴权密钥
+# 5. 配置部署模式与参数对账
 echo -e "${BLUE}[5/5] 配置系统参数与自动对账...${NC}"
+
+# 配置 Backend
 if [ -f "/opt/fota-backend/.env" ]; then
     sed -i "s/^DEPLOYMENT_MODE=.*/DEPLOYMENT_MODE=$DEPLOYMENT_MODE/" /opt/fota-backend/.env
     echo -e "${GREEN}✓ Backend 部署模式已设置为 $DEPLOYMENT_MODE${NC}"
 
-    # 仅场景 A 需要自动对暗号
+    # 仅场景 A 需要自动同步内部鉴权密钥 (Shared Secret)
     if [ "$DEPLOYMENT_MODE" = "A" ] && [ -f "/opt/litellm-proxy/.env" ]; then
         echo -e "${BLUE}检测到网关模式，正在自动同步内部鉴权密钥...${NC}"
-        # 生成一个随机的高强度 Key (如果目前还是占位符的话)
         CURRENT_KEY=$(grep "^LITELLM_MASTER_KEY=" /opt/litellm-proxy/.env | cut -d'=' -f2)
         if [[ "$CURRENT_KEY" == *"xxxx"* ]] || [ -z "$CURRENT_KEY" ]; then
             NEW_KEY="sk-fota-$(openssl rand -hex 16)"
             sed -i "s/^LITELLM_MASTER_KEY=.*/LITELLM_MASTER_KEY=$NEW_KEY/" /opt/litellm-proxy/.env
             sed -i "s/^LITELLM_API_KEY=.*/LITELLM_API_KEY=$NEW_KEY/" /opt/fota-backend/.env
             echo -e "${GREEN}✓ 已自动生成并同步高强度内部鉴权密钥${NC}"
+        fi
+    fi
+fi
+
+# 配置 Web (去除 baked-in 隐患，统一走相对路径代理)
+if [ -f "/opt/fota-web/.env.local" ]; then
+    # 强制将 BACKEND_URL 指向本地，因为 Next.js 服务端就在本地运行
+    sed -i "s|^BACKEND_URL=.*|BACKEND_URL=http://127.0.0.1:8000|" /opt/fota-web/.env.local
+    echo -e "${GREEN}✓ Web 服务端代理指向已收束至本地后端${NC}"
+fi
+
+# 6. (可选) 配置 Nginx 反向代理
+if command -v nginx &> /dev/null; then
+    echo -e "${BLUE}[附加步] 检测到 Nginx，正在尝试配置反向代理单入口...${NC}"
+    NGINX_CONF="/etc/nginx/sites-available/velab.conf"
+    NGINX_TEMPLATE="$PROJECT_DIR/scripts/nginx/velab.conf.template"
+    
+    if [ -f "$NGINX_TEMPLATE" ]; then
+        cp "$NGINX_TEMPLATE" "$NGINX_CONF"
+        sed -i "s/DOMAIN_OR_IP/$SERVER_DOMAIN/g" "$NGINX_CONF"
+        ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/"
+        
+        if nginx -t > /dev/null 2>&1; then
+            systemctl reload nginx
+            echo -e "${GREEN}✓ Nginx 统一入口配置成功: http://$SERVER_DOMAIN${NC}"
         else
-            echo -e "${YELLOW}⚠ 检测到已有自定义密钥，跳过自动覆盖${NC}"
+            echo -e "${RED}⚠ Nginx 配置检查失败，请手动检查 $NGINX_CONF${NC}"
         fi
     fi
 fi
@@ -127,39 +161,23 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 if [ "$DEPLOYMENT_MODE" = "A" ]; then
-    echo -e "${BLUE}场景 A 部署完成，下一步操作:${NC}"
+    echo -e "${BLUE}场景 A 部署完成，访问地址: ${YELLOW}http://$SERVER_DOMAIN${NC}"
     echo ""
-    echo -e "${YELLOW}1. 配置 Gateway (LiteLLM):${NC}"
+    echo -e "${YELLOW}1. 配置网关秘钥 (必做):${NC}"
     echo -e "   sudo nano /opt/litellm-proxy/.env"
-    echo -e "   ${YELLOW}填入真实的 API Keys${NC}"
+    echo -e "   ${YELLOW}填入真实的 ANTHROPIC_API_KEY 等${NC}"
     echo ""
-    echo -e "${YELLOW}2. 配置 Backend:${NC}"
-    echo -e "   sudo nano /opt/fota-backend/.env"
-    echo -e "   ${YELLOW}设置 LITELLM_BASE_URL 指向 Gateway${NC}"
-    echo ""
-    echo -e "${YELLOW}3. 重启服务 (在修改上述配置后执行):${NC}"
-    echo -e "   sudo systemctl restart litellm"
-    echo -e "   sudo systemctl restart fota-backend"
-    echo -e "   sudo systemctl restart fota-web"
-    echo ""
-    echo -e "${YELLOW}4. 检查状态 (服务已在部署脚本中尝试自动启动):${NC}"
-    echo -e "   sudo systemctl status litellm"
-    echo -e "   sudo systemctl status fota-backend"
-    echo -e "   sudo systemctl status fota-web"
+    echo -e "${YELLOW}2. 检查各服务状态:${NC}"
+    echo -e "   sudo systemctl status litellm fota-backend fota-web"
 else
-    echo -e "${BLUE}场景 B 部署完成，下一步操作:${NC}"
+    echo -e "${BLUE}场景 B 部署完成，访问地址: ${YELLOW}http://$SERVER_DOMAIN${NC}"
     echo ""
-    echo -e "${YELLOW}1. 配置 Backend:${NC}"
+    echo -e "${YELLOW}1. 配置 Backend 秘钥:${NC}"
     echo -e "   sudo nano /opt/fota-backend/.env"
     echo -e "   ${YELLOW}填入真实的 ANTHROPIC_API_KEY 和 OPENAI_API_KEY${NC}"
     echo ""
-    echo -e "${YELLOW}2. 重启服务 (在修改配置后执行):${NC}"
-    echo -e "   sudo systemctl restart fota-backend"
-    echo -e "   sudo systemctl restart fota-web"
-    echo ""
-    echo -e "${YELLOW}3. 检查状态 (服务已在部署脚本中尝试自动启动):${NC}"
-    echo -e "   sudo systemctl status fota-backend"
-    echo -e "   sudo systemctl status fota-web"
+    echo -e "${YELLOW}2. 检查各服务状态:${NC}"
+    echo -e "   sudo systemctl status fota-backend fota-web"
 fi
 
 echo ""

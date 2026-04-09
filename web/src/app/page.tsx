@@ -33,11 +33,6 @@ import {
 } from "@/lib/types";
 import { parseSSEBuffer } from "@/lib/sseParse";
 
-// 后端服务地址配置
-const BACKEND_URL =
-  (typeof process !== "undefined" &&
-    process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "")) ||
-  "http://localhost:8000";
 
 /**
  * SSE 事件载荷类型定义
@@ -254,7 +249,7 @@ export default function Home() {
     };
 
     try {
-      const response = await fetch(`${BACKEND_URL}/chat`, {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
