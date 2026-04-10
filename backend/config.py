@@ -69,11 +69,19 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
 
     # ── LLM 配置 ──
-    LITELLM_BASE_URL: Optional[str] = "https://gateway.fota.com/v1"
+    LITELLM_BASE_URL: Optional[str] = "http://127.0.0.1:4000/v1"
     LITELLM_API_KEY: Optional[str] = "sk-fota-master-key"
+
+    # ── 存储配置 ──
+    # 日志文件存储根目录
+    STORAGE_ROOT: str = "/opt/fota-backend/data"
 
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+
+    # 供应商专用 Base URL (场景 B 直连模式使用)
+    ANTHROPIC_API_BASE: str = "https://api.anthropic.com"
+    OPENAI_API_BASE: str = "https://api.openai.com/v1"
 
     # ── 编排器 ──
     ORCHESTRATOR_STREAM: bool = False
@@ -123,7 +131,10 @@ class Settings(BaseSettings):
         """
         if self.DEPLOYMENT_MODE == DeploymentMode.SCENARIO_A:
             return self.LITELLM_BASE_URL
-        # 场景 B 直连模式下，OpenAI SDK 默认指向 api.openai.com
+        # 场景 B 下，如果用户明确设置了 OPENAI_API_BASE（非官方默认），则返回它作为全局透传地址
+        # 否则返回 None 让 SDK 自行处理多供应商默认端点
+        if self.OPENAI_API_BASE != "https://api.openai.com/v1":
+            return self.OPENAI_API_BASE
         return None
 
     @property
@@ -142,6 +153,10 @@ class Settings(BaseSettings):
         # 场景 B 需区分供应商，此处取第一个可用 Key
         return self.ANTHROPIC_API_KEY or self.OPENAI_API_KEY
 
+    # ── Workspace（诊断工作区沙盒）──
+    WORKSPACE_ENABLED: bool = True  # 是否启用 Markdown 工作区
+    WORKSPACE_MAX_SIZE_MB: int = 1024  # 工作区总容量上限（MB）
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
@@ -150,9 +165,9 @@ settings = Settings()
 
 # ── 场景化 Agent 映射（Velab 编排层使用）──
 SCENARIO_AGENT_MAP: dict[str, list[str]] = {
-    "fota-diagnostic": ["log_analytics"],
-    "fota-jira": ["log_analytics", "jira_knowledge"],
+    "fota-diagnostic": ["log_analytics", "doc_retrieval"],
+    "fota-jira": ["log_analytics", "jira_knowledge", "doc_retrieval"],
     "fleet-analytics": ["log_analytics"],
-    "ces-demo": ["log_analytics", "jira_knowledge"],
+    "ces-demo": ["log_analytics", "jira_knowledge", "doc_retrieval"],
     "data-acquisitions": ["log_analytics"],
 }

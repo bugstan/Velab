@@ -1,0 +1,68 @@
+# ============================================================
+# FOTA 智能诊断平台 - Nginx 生产环境极致优化模板
+# ============================================================
+# 针对 FOTA 诊断平台的“大日志上传”、“SSE流式诊断”、“长连接解析”进行了针对性调优
+
+server {
+    listen 80;
+    server_name DOMAIN_OR_IP;
+
+    # ── 1. 全局传输优化 ──
+    # [FOTA 特性]：允许上传超大日志文件（固件日志通常很大），默认 1MB 会导致上传 413 错误
+    client_max_body_size 2048M; 
+
+    # 静态资源 Gzip 压缩，提升首屏加载速度
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # ── 2. 前端路由 (Next.js) ──
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        
+        # 增加超时容忍度，防止前端构建编译期间连接中断
+        proxy_read_timeout 300s;
+    }
+
+    # ── 3. SSE 流式代理优化 (针对 Chat 接口) ──
+    location /api/chat {
+        proxy_pass http://127.0.0.1:3000/api/chat;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_set_header Connection '';
+    }
+
+    # ── 4. 通用 API 代理层 (其他 Next.js API Routes) ──
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # ── 5. 后端 API 处理 (文件上传) ──
+    location /backend-api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # 文件上传专用超时设置
+        proxy_read_timeout 600s;
+        client_body_timeout 600s;
+    }
+
+    # ── 5. 安全加固 ──
+    server_tokens off; # 隐藏 Nginx 版本号
+}

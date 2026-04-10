@@ -20,14 +20,18 @@ backend/
 │   ├── base.py              # Agent 基类和注册机制
 │   ├── orchestrator.py      # 编排器
 │   ├── log_analytics.py     # 日志分析 Agent
-│   └── jira_knowledge.py    # Jira 知识库 Agent
-├── api/                     # RESTful API接口层
+│   ├── jira_knowledge.py    # Jira 知识库 Agent
+│   ├── doc_retrieval.py     # 文档检索 Agent (NEW)
+│   └── rca_synthesizer.py   # RCA 综合分析 Agent
+├── api/                     # RESTful API接口层 (22个端点)
 │   ├── __init__.py
 │   ├── schemas.py           # Pydantic数据模型
 │   ├── cases.py             # Case管理接口（5个端点）
 │   ├── logs.py              # 日志文件上传接口（2个端点）
 │   ├── parse.py             # 解析任务接口（3个端点）
-│   └── events.py            # 事件查询导出接口（5个端点）
+│   ├── events.py            # 事件查询导出接口（5个端点）
+│   ├── feedback.py          # 诊断反馈接口（5个端点）(NEW)
+│   └── metrics.py           # 监控指标接口（2个端点）(NEW)
 ├── models/                  # SQLAlchemy ORM模型
 │   ├── __init__.py
 │   ├── base.py              # 基础模型类
@@ -37,6 +41,12 @@ backend/
 │   └── diagnosis.py         # ConfirmedDiagnosis模型
 ├── services/                # 核心服务层
 │   ├── llm.py               # LLM 服务抽象
+│   ├── vector_search.py     # TF-IDF/向量检索服务
+│   ├── semantic_cache.py    # 语义缓存服务
+│   ├── tool_functions.py    # Agent Tool Use 函数 (支持 Workspace 写入)
+│   ├── workspace_manager.py # Agent Markdown 工作区沙盒管理 (NEW)
+│   ├── doc_chunker.py       # PDF/文本切块服务
+│   ├── evaluation.py        # 诊断评测框架 (已支持一键运行)
 │   ├── time_alignment.py    # 时间对齐服务
 │   ├── event_normalizer.py  # 事件标准化服务
 │   └── parser/              # 日志解析器插件
@@ -55,7 +65,8 @@ backend/
 │   └── README.md            # 任务队列使用文档
 ├── tests/                   # 测试套件
 │   ├── conftest.py          # 测试配置和fixtures
-│   ├── test_api_cases.py    # Cases API测试（9个测试）
+│   ├── test_workspace_manager.py # 工作区沙盒功能测试 (17个测试用例)
+│   ├── test_api_cases.py    # Cases API测试
 │   ├── test_api_logs.py     # Logs API测试
 │   ├── test_api_parse.py    # Parse API测试（8个测试）
 │   ├── test_api_events.py   # Events API测试（13个测试）

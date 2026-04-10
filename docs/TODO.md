@@ -1,8 +1,8 @@
 # Velab 项目任务清单
 
-> **最后更新**: 2026-04-04
-> **当前阶段**: Sprint 3 - 前端UI已完成 ✅
-> **下一阶段**: Sprint 4 - 后端在线诊断增强（LLM集成、向量检索）
+> **最后更新**: 2026-04-06
+> **当前阶段**: Sprint 4 进行中
+> **下一阶段**: Sprint 5 - LLM 集成、真实数据验证、生产部署
 
 ---
 
@@ -60,12 +60,13 @@
   - [x] 添加集成测试（page.tsx）
   - [x] 添加 API 路由测试（/api/chat）
   - [x] 配置测试覆盖率目标（分支≥70%, 函数≥70%, 行≥80%, 语句≥80%）
+    - ✅ `vitest.config.ts` 中已配置 `thresholds` 强制校验 (2026-04-06 修复)
   - [x] 创建完整测试文档 `web/README_TESTING.md`
   - [x] 更新文档以反映测试框架变更
 
 - [x] **离线数据预处理管线 (P0) - 100% 完成 (2026-04-04 新增)**
   - [x] **数据库 Schema 创建**
-    - [x] `diagnosis_cases` 表（案件记录）
+    - [x] `cases` 表（案件记录）
     - [x] `raw_log_files` 表（原始日志文件元数据）
     - [x] `diagnosis_events` 表（诊断事件详情）
     - [x] `confirmed_diagnosis` 表（已确认诊断缓存）
@@ -79,7 +80,7 @@
     - [x] `parser_vehicle_signal` - 车辆信号导出文件解析
   - [x] **Time Alignment Service 实现**
     - [x] 锚点事件识别（Android启动/关键系统事件）
-    - [x] 时钟偏移计算（线性回归拟合）
+    - [x] 时钟偏移计算（加权平均拟合）
     - [x] `normalized_ts` 生成
     - [x] 三级降级策略（高/中/低置信度）
   - [x] **Event Normalizer 实现**
@@ -133,10 +134,10 @@
 
 ## 🚧 进行中任务
 
-### 2. 后端核心逻辑实现 (P1) - 70% 完成
+### 2. 后端核心逻辑实现 (P1) - 85% 完成
 
 - [x] **基础框架搭建**
-  - [x] FastAPI 应用入口 (`main.py`)
+  - [x] FastAPI 应用入口 (`main.py`，已迁移 lifespan API）
   - [x] Agent 注册机制 (`agents/base.py`)
   - [x] Orchestrator 编排器 (`agents/orchestrator.py`)
   - [x] LLM 服务抽象层 (`services/llm.py`)
@@ -145,37 +146,40 @@
 - [x] **Log Analytics Agent MVP实现** ✅
   - [x] 基础日志分析功能（使用Mock数据）
   - [x] 从本地文件读取日志
-  - [x] 异常模式识别
-  - [ ] 实现时间窗口裁剪逻辑（根据故障时间点裁剪 ±15 分钟）
-  - [ ] 接入真实 LLM 推理（替换 Mock 实现）
-  - [ ] 实现 Tool Use：`extract_timeline_events`
-  - [ ] 实现 Tool Use：`fetch_raw_line_context`
-  - [ ] 实现 Tool Use：`search_fota_stage_transitions`
+  - [x] 异常模式识别（Mock 硬编码，待 LLM 替换）
+  - [x] 实现时间窗口裁剪逻辑（`services/tool_functions.py:clip_log_by_time_window`）(2026-04-06)
+  - [ ] 接入真实 LLM 推理（替换 Mock 实现）⬅️ **需要 API Key**
+  - [x] 实现 Tool Use：`extract_timeline_events` (2026-04-06)
+  - [x] 实现 Tool Use：`fetch_raw_line_context` (2026-04-06)
+  - [x] 实现 Tool Use：`search_fota_stage_transitions` (2026-04-06)
 
 - [x] **Jira Knowledge Agent MVP实现** ✅
   - [x] 基础知识库检索（使用Mock数据）
-  - [x] 历史工单匹配（从 `backend/data/jira_mock/tickets.json` 读取）
+  - [x] 历史工单匹配（从 `backend/data/jira_mock/tickets.json` 读取，已扩展至 10 个工单）
   - [x] 技术文档检索（从 `backend/data/jira_mock/documents.json` 读取）
-  - [ ] 创建 `services/vector_search.py` - 向量检索服务（当前使用简单文本匹配）
-  - [ ] 实现 Tool Use：`vector_search_jira_issues`（当前使用 Mock 实现）
-  - [ ] 实现 Tool Use：`get_jira_issue_detail`（当前使用 Mock 实现）
-  - [ ] 补充 FOTA 典型故障案例数据（当前有 4 个 Mock 工单）
+  - [x] 创建 `services/vector_search.py` — TF-IDF baseline 向量检索服务 (2026-04-06)
+  - [x] 实现 Tool Use：`vector_search_jira_issues`（TF-IDF 模式）(2026-04-06)
+  - [x] 实现 Tool Use：`search_documents`（TF-IDF 模式）(2026-04-06)
+  - [x] 补充 FOTA 典型故障案例数据（已扩展至 10 个 Mock 工单）(2026-04-06)
+  - [ ] 切换 vector_search 到 embedding 模式 ⬅️ **需要 API Key**
 
-- [ ] **Doc Retrieval Agent 实现**（暂未实现，当前仅有 Log Analytics 和 Jira Knowledge 两个 Agent）
-  - [ ] 创建 `backend/agents/doc_retrieval.py`
-  - [ ] 实现 Tool Use：`search_document_knowledge_base`
-  - [ ] 实现 Tool Use：`get_document_chunk`
+- [x] **Doc Retrieval Agent 实现** ✅ (2026-04-06)
+  - [x] 创建 `backend/agents/doc_retrieval.py` — 文档检索 Agent
+  - [x] TF-IDF 文本匹配检索
+  - [x] 加载 `data/docs/index.json` 文档索引（6 份技术文档）
+  - [x] 内置 5 份保底文档
+  - [x] 注册到 SCENARIO_AGENT_MAP（fota-diagnostic, fota-jira, ces-demo）
 
 - [x] **RCA Synthesizer 实现** ✅
   - [x] 多路证据汇总逻辑
   - [x] 置信度量化计算
-  - [x] 引用 ID 断言验证
+  - [x] 引用 ID 断言验证（完整性/一致性/重复/孤立检查）(2026-04-06)
   - [x] 执行摘要生成
   - [x] 建议生成
 
 ---
 
-## 📋 待开始任务
+## ✅ 已完成 - 前端
 
 ### 3. 前端交互功能开发 (P1) - 100% 完成 ✅
 
@@ -207,51 +211,71 @@
   - [x] 更新为FOTA诊断专用问题（[`web/src/lib/types.ts`](../web/src/lib/types.ts:71-92)）
   - [x] 4个诊断场景：升级失败分析、历史案例查询、iCGM挂死分析、MPU校验失败
 
-### 4. 数据与演示场景准备 (P2) - 30% 完成
+### 4. 数据与演示场景准备 (P2) - 90% 完成
 
-- [x] **演示日志集** ⚠️ 部分完成
+- [x] **演示日志集** ✅ (2026-04-06 完成)
   - [x] 在 `backend/data/jira_mock/` 放置 Mock 数据（tickets.json + documents.json）
-  - [ ] 在 `backend/data/logs/` 放置典型 FOTA 故障日志样本（目录不存在）
-  - [ ] iCGM 死循环下载 + 文件校验失败场景
-  - [ ] ECU 状态不一致
-  - [ ] 网络中断导致升级失败
-  - [ ] 重启中断下载
+  - [x] 在 `backend/data/logs/` 放置 5 份 FOTA 故障日志样本：
+    - [x] `fota_upgrade_failure_20250911.log` — 基础升级失败
+    - [x] `icgm_emmc_timeout_20250915.log` — iCGM eMMC 写入超时 + 回退 (2026-04-06)
+    - [x] `network_interrupt_download_20251003.log` — 网络中断下载校验失败 (2026-04-06)
+    - [x] `ecu_dependency_chain_failure_20251120.log` — ECU 依赖链断裂 (2026-04-06)
+    - [x] `battery_drain_abort_20251208.log` — 电池电量不足紧急中止 (2026-04-06)
 
 - [x] **FOTA专用场景引导词** ✅
   - [x] 前端预设问题已更新为FOTA诊断专用
-  - [x] 4个预设问题：
-    - [x] 「分析 FOTA 升级失败的根本原因」
-    - [x] 「查询类似 FOTA-9123 的历史案例」
-    - [x] 「分析为何 iCGM 模块升级时挂死」
-    - [x] 「MPU 升级包校验失败的常见原因」
+  - [x] 4个预设问题
 
 - [x] **Jira 工单数据（Mock）** ✅
-  - [x] 创建Mock历史 Jira 工单（4个）
+  - [x] 创建Mock历史 Jira 工单（10个，2026-04-06 从 4→10 扩充）
   - [ ] 同步真实历史 Jira 工单
-  - [ ] 向量化入库
+  - [ ] 向量化入库（需 embedding API Key）
 
-- [x] **技术文档数据（Mock）** ✅
-  - [x] 创建Mock技术文档（3份）
-  - [ ] PDF/PPT 文档切块
-  - [ ] 向量化入库
+- [x] **技术文档数据** ✅ (2026-04-06)
+  - [x] 创建 `data/docs/index.json` — 6 份技术文档索引
+  - [x] 创建 `services/doc_chunker.py` — PDF/文本文档切块服务
+  - [x] 支持 3 种切块策略（段落感知/固定长度/滑动窗口）
+  - [x] 支持 PDF 提取（pdfplumber / PyPDF2）
+  - [ ] 向量化入库（需 embedding API Key）
 
-### 5. 评测与验收 (P2) - 0% 完成
+### 5. 评测与验收 (P2) - 70% 完成
 
-- [ ] **基准测试集建设**
-  - [ ] 构建 5-10 个标准 case
-  - [ ] 人工标注正确答案
+- [x] **基准测试集建设** ✅ (2026-04-06)
+  - [x] 构建 5 个标准 case（`services/evaluation.py: BUILTIN_EVAL_CASES`）
+  - [x] 标注期望根因、关键词、ECU、FOTA 阶段、置信度
 
-- [ ] **评测指标**
-  - [ ] 根因命中率
-  - [ ] 证据引用正确率
-  - [ ] 相似 Jira 召回率
-  - [ ] 报告可读性
-  - [ ] 响应时间
+- [x] **评测指标框架** ✅ (2026-04-06)
+  - [x] 关键词命中率（权重 25%）
+  - [x] ECU 识别准确率（权重 20%）
+  - [x] FOTA 阶段检测率（权重 20%）
+  - [x] 根因相关度（权重 25%）
+  - [x] 置信度匹配（权重 10%）
+  - [x] 加权总分 + 通过阈值（≥0.6）
 
 - [ ] **人工评审**
   - [ ] 领域专家评审结论是否靠谱
   - [ ] 证据是否站得住
   - [ ] 建议是否可执行
+
+### 6. 服务增强 (P1) - 100% 完成 (2026-04-06 新增)
+
+- [x] **语义缓存服务** (`services/semantic_cache.py`)
+  - [x] 精确哈希匹配（SHA-256）
+  - [x] 缓存 UPSERT / 失效 / 统计
+  - [x] TTL 过期清理
+
+- [x] **诊断反馈 API** (`api/feedback.py`, 5 个端点)
+  - [x] POST /api/feedback — 提交确认/拒绝/部分确认
+  - [x] GET /api/feedback/case/{id} — 按案件查询
+  - [x] GET /api/feedback/{id} — 单条详情
+  - [x] GET /api/feedback — 列表（可按状态过滤）
+  - [x] GET /api/feedback/stats/summary — 统计摘要
+
+- [x] **监控指标** (`api/metrics.py`)
+  - [x] GET /api/metrics — Prometheus text format 导出
+  - [x] GET /api/metrics/json — JSON 格式摘要
+  - [x] 计数器 / 直方图 / 仪表盘
+  - [x] 数据库连接池状态
 
 ---
 
@@ -271,7 +295,7 @@
 - ✅ MVP核心功能（Log Analytics + Jira Knowledge + RCA Synthesizer）- 已完成
 - ✅ 演示数据准备（日志 + Jira工单 + 技术文档）- 已完成
 - ✅ 端到端测试 - 已完成
-- 🚧 语义缓存实现 - 待完成
+- ✅ 语义缓存实现 - 完成（`services/semantic_cache.py`，精确哈希匹配模式）
 
 ### Sprint 3（已完成）✅
 - ✅ 前端 UI 开发（100%完成）
@@ -279,13 +303,21 @@
 - ✅ RCA 报告展示 + 引用来源跳转（SourcePanel组件）
 - ✅ FOTA专用预设问题
 - ✅ Markdown渲染增强（置信度标签、THINKING折叠）
-- 📅 已确认诊断缓存 + 反馈闭环（待实现）
+- ✅ 已确认诊断缓存 + 反馈闭环（`api/feedback.py`，5个端点）
 
-### Sprint 4（计划中）📅
-- 📅 评测集建设
-- 📅 置信度模型校准
+### Sprint 4（进行中）🚧
+- ✅ Tool Use 实现（3个工具函数 + 时间窗口裁剪）
+- ✅ 向量检索服务（TF-IDF baseline）
+- ✅ Doc Retrieval Agent
+- ✅ 评测框架（5个标准case + 5维评分）
+- ✅ 文档切块服务
+- ✅ 语义缓存 + 反馈闭环 API
+- ✅ 监控指标 API
+- ✅ 引用 ID 断言验证
+- ✅ 演示日志扩充（5份）+ Jira工单扩充（10个）
+- 📅 接入真实 LLM 推理 ⬅️ 需要 API Key
+- 📅 向量化入库 ⬅️ 需要 Embedding API Key
 - 📅 权限体系与操作审计
-- 📅 监控告警 Dashboard
 
 ---
 
@@ -300,12 +332,13 @@
 | 任务队列集成 | 100% | ✅ 完成 |
 | API测试 | 100% | ✅ 完成 |
 | MVP核心功能 | 100% | ✅ 完成 |
-| 后端核心逻辑（在线诊断增强） | 70% | 🚧 进行中 |
+| 后端核心逻辑（在线诊断增强） | 85% | 🚧 仅剩 LLM 接入 |
 | 前端交互功能 | 100% | ✅ 完成 |
-| 数据与演示场景 | 30% | 🚧 进行中 |
-| 评测与验收 | 0% | 📅 待开始 |
+| 数据与演示场景 | 90% | ✅ 基本完成 |
+| 评测与验收 | 70% | 🚧 剩余人工评审 |
+| 服务增强（缓存/反馈/监控） | 100% | ✅ 完成 |
 
-**总体进度**: 约 **83%**
+**总体进度**: 约 **93%**（剩余部分需 API Key）
 
 ---
 
@@ -327,5 +360,5 @@
 
 ---
 
-**最后更新**: 2026-04-04
+**最后更新**: 2026-04-06
 **维护人**: AI 开发专家

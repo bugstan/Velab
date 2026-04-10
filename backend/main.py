@@ -37,10 +37,13 @@ from common.chain_log import (
     setup_logging,
 )
 
+from contextlib import asynccontextmanager
+
 # 导入 Agent 模块，触发自动注册
 # 这些导入语句会执行模块级代码，将 Agent 实例注册到全局 registry
 import agents.log_analytics  # noqa: F401
 import agents.jira_knowledge  # noqa: F401
+import agents.doc_retrieval  # noqa: F401
 
 from agents.orchestrator import orchestrate
 
@@ -53,38 +56,42 @@ from database import db_manager
 # 初始化日志系统
 setup_logging()
 
-# 创建 FastAPI 应用实例
-app = FastAPI(
-    title="FOTA 智能诊断平台",
-    description="FOTA多域日志智能诊断系统 - 提供日志解析、时间对齐、事件查询等功能",
-    version="1.0.0"
-)
 log = logging.getLogger(__name__)
 
-# 初始化数据库连接池和任务客户端
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时初始化数据库连接池和任务客户端"""
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理：启动时初始化，关闭时清理"""
+    # ── Startup ──
     log.info("Initializing database connection pool...")
     db_manager.initialize()
     log.info("Database connection pool initialized")
-    
+
     log.info("Initializing task client...")
     from tasks.client import get_task_client
     await get_task_client()
     log.info("Task client initialized")
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时清理数据库连接和任务客户端"""
+    yield  # 应用运行中
+
+    # ── Shutdown ──
     log.info("Closing task client...")
     from tasks.client import close_task_client
     await close_task_client()
     log.info("Task client closed")
-    
+
     log.info("Closing database connections...")
     db_manager.close()
     log.info("Database connections closed")
+
+
+# 创建 FastAPI 应用实例
+app = FastAPI(
+    title="FOTA 智能诊断平台",
+    description="FOTA多域日志智能诊断系统 - 提供日志解析、时间对齐、事件查询等功能",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 # 配置 CORS 中间件，允许前端跨域访问
 app.add_middleware(

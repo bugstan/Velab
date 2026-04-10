@@ -126,6 +126,7 @@ sudo systemctl start fota-web
 
 - 基于 SSE (Server-Sent Events) 的实时数据流
 - 逐步展示 Agent 执行过程（Thinking Process）
+- **工作区排查进度展示**：实时渲染 `todo.md` 和 `notes.md` 的增量更新（Checklist/摘要）
 - 流式输出最终诊断结果
 
 ### 2. 多场景支持
@@ -348,5 +349,5 @@ npm run build
 ---
 
 **项目状态**: 🚧 开发中  
-**最后更新**: 2026-04-02  
+**最后更新**: 2026-04-06  
 **维护团队**: FOTA 诊断平台团队

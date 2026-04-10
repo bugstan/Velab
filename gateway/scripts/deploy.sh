@@ -58,12 +58,15 @@ fi
 # 3. 创建部署目录
 echo -e "${BLUE}[3/7] 创建部署目录...${NC}"
 mkdir -p $DEPLOY_DIR/logs
+chown -R litellm:litellm $DEPLOY_DIR
 echo -e "${GREEN}✓ 部署目录已创建${NC}"
 
-# 4. 复制配置文件到部署目录
-echo -e "${BLUE}[4/7] 复制配置文件...${NC}"
-cp $GATEWAY_DIR/config.yaml $DEPLOY_DIR/
-echo -e "${GREEN}✓ config.yaml 已复制${NC}"
+# 4. 同步代码与配置文件到部署目录
+echo -e "${BLUE}[4/7] 同步代码与配置文件...${NC}"
+rsync -av --exclude='venv' --exclude='logs' --exclude='.env' \
+    $GATEWAY_DIR/ $DEPLOY_DIR/
+chown -R litellm:litellm $DEPLOY_DIR
+echo -e "${GREEN}✓ 代码同步完成并设置权限${NC}"
 
 # 5. 创建 Python 虚拟环境并安装 LiteLLM
 echo -e "${BLUE}[5/7] 配置 Python 虚拟环境...${NC}"
@@ -72,10 +75,10 @@ if [ ! -d "$DEPLOY_DIR/venv" ]; then
     echo -e "${GREEN}✓ 虚拟环境已创建${NC}"
 fi
 
-echo -e "${BLUE}安装 LiteLLM...${NC}"
+echo -e "${BLUE}安装 LiteLLM 及其扩展依赖 (Prometheus)...${NC}"
 sudo -u litellm $DEPLOY_DIR/venv/bin/pip install --upgrade pip
-sudo -u litellm $DEPLOY_DIR/venv/bin/pip install 'litellm[proxy]'
-echo -e "${GREEN}✓ LiteLLM 已安装${NC}"
+sudo -u litellm $DEPLOY_DIR/venv/bin/pip install 'litellm[proxy]' prometheus-client
+echo -e "${GREEN}✓ LiteLLM 及其依赖已安装${NC}"
 
 # 验证安装
 LITELLM_VERSION=$($DEPLOY_DIR/venv/bin/litellm --version 2>&1 | head -n 1)
@@ -105,7 +108,8 @@ if [ -f "$GATEWAY_DIR/systemd/litellm.service" ]; then
     cp $GATEWAY_DIR/systemd/litellm.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable litellm
-    echo -e "${GREEN}✓ systemd 服务已安装并启用${NC}"
+    systemctl restart litellm
+    echo -e "${GREEN}✓ systemd 服务已安装、启用并重启${NC}"
 else
     echo -e "${YELLOW}⚠ systemd 服务文件不存在，跳过安装${NC}"
 fi

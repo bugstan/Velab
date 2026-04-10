@@ -27,7 +27,7 @@ from config import settings
 router = APIRouter()
 
 # 日志文件存储根目录
-STORAGE_ROOT = Path("/var/fota/logs")
+STORAGE_ROOT = Path(settings.STORAGE_ROOT) / "logs"
 STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 

@@ -39,7 +39,9 @@ RestartSec=5
 # 安全加固
 NoNewPrivileges=yes
 ProtectSystem=strict
+# 放宽对宿主程序目录的写权限，防止 LiteLLM 生成本地 SQLite 或者写入缓存时遭遇 Read-Only 拦截
 ReadWritePaths=/opt/litellm-proxy/logs
+ReadWritePaths=/opt/litellm-proxy
 PrivateTmp=yes
 
 # 资源限制

@@ -4,6 +4,115 @@
 
 ---
 
+## 📋 部署场景说明
+
+### 是否需要单独的 Gateway 服务器？
+
+**取决于你的部署位置：**
+
+#### 场景 A：平台在中国大陆 → 需要单独 Gateway 服务器 ✅
+
+```
+┌─────────────────────────────────────┐
+│ 中国服务器（主服务器）                │
+│ ┌─────────┐  ┌──────────┐           │
+│ │ Web前端  │  │ Backend  │           │
+│ │ Next.js │  │ FastAPI  │           │
+│ │         │  │ + Agents │           │
+│ │         │  │ + 数据库  │           │
+│ └─────────┘  └──────────┘           │
+│                    │                 │
+│                    │ HTTPS (~150ms)  │
+└────────────────────┼─────────────────┘
+                     │ 跨境请求
+                     ▼
+┌─────────────────────────────────────┐
+│ 海外服务器（Gateway 专用）            │
+│ ┌─────────────────────────────┐     │
+│ │ LiteLLM Gateway             │     │
+│ │ - Key Pool 轮转              │     │
+│ │ - 自动 Fallback              │     │
+│ │ - 限流保护                   │     │
+│ │ - 重试机制                   │     │
+│ └─────────────────────────────┘     │
+│         │                │           │
+│         ▼                ▼           │
+│    Claude API      OpenAI API       │
+│    (<10ms)         (<10ms)          │
+└─────────────────────────────────────┘
+```
+
+**部署配置**:
+- **主服务器（国内）**: Backend + Web + PostgreSQL + Redis + MinIO
+- **Gateway 服务器（海外）**: LiteLLM Proxy（轻量级，2GB RAM 即可）
+- **原因**: 中国大陆无法直接访问 Claude/OpenAI API，需要海外中转
+
+**Backend 配置**:
+```bash
+# backend/.env
+DEPLOYMENT_MODE=A                              # 场景A
+LITELLM_BASE_URL=https://gateway.fota.com/v1  # Gateway地址
+LITELLM_API_KEY=sk-fota-master-key             # Gateway Master Key
+```
+
+#### 场景 B：平台在海外 → 无需 Gateway 服务器 ✅
+
+```
+┌─────────────────────────────────────┐
+│ 海外服务器（单一服务器）              │
+│ ┌─────────┐  ┌──────────┐           │
+│ │ Web前端  │  │ Backend  │           │
+│ │ Next.js │  │ FastAPI  │           │
+│ │         │  │ + Agents │           │
+│ │         │  │ + 数据库  │           │
+│ └─────────┘  └──────────┘           │
+│                    │                 │
+│                    │ 直连（<50ms）    │
+└────────────────────┼─────────────────┘
+                     │
+                     ▼
+              Claude/OpenAI API
+```
+
+**部署配置**:
+- **单一服务器（海外）**: Backend + Web + PostgreSQL + Redis + MinIO
+- **原因**: 海外服务器可直接访问 Claude/OpenAI API，无需中转
+
+**Backend 配置**:
+```bash
+# backend/.env
+DEPLOYMENT_MODE=B                              # 场景B
+ANTHROPIC_API_KEY=sk-ant-api00-xxxxx          # 直接配置供应商Key
+OPENAI_API_KEY=sk-xxxxx                        # 直接配置供应商Key
+```
+
+### 快速判断你的场景
+
+在你的服务器上运行：
+
+```bash
+curl -I https://api.anthropic.com
+curl -I https://api.openai.com
+```
+
+- **超时或连接失败** → 场景 A（需要 Gateway）
+- **正常返回** → 场景 B（无需 Gateway）
+
+### 为什么场景 A 需要单独服务器？
+
+1. **网络隔离**: 中国大陆无法直接访问 Claude/OpenAI API
+2. **减少跨境请求**: 重试/Fallback/Key轮转在海外本地完成，避免多次跨境
+3. **降低延迟**: Gateway 与 LLM API 在同一区域（<10ms）
+4. **数据合规**: 敏感数据留在国内，只有脱敏后的请求出境
+
+### 详细架构说明
+
+完整的技术分析和架构设计请参考：
+- [FOTA_LLM_API中转方案.md](../docs/FOTA_LLM_API中转方案.md) - 完整架构设计（847行）
+- [backend/config.py](../backend/config.py) - 部署模式配置代码
+
+---
+
 ## 📋 目录结构
 
 ```

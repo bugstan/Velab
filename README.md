@@ -27,37 +27,24 @@ Velab/
 │   ├── agents/           # Agent 实现（Log/Jira/Doc）
 │   ├── api/              # RESTful API接口（15个端点）
 │   ├── models/           # SQLAlchemy ORM模型
-│   ├── services/         # 核心服务（Parser/TimeAlignment/EventNormalizer）
+│   ├── services/         # 核心服务（Parser/TimeAlignment/WorkspaceManager）
 │   ├── tasks/            # Arq异步任务队列
-│   ├── tests/            # API单元测试和集成测试（34个测试）
-│   ├── scripts/          # 部署和启动脚本
-│   ├── systemd/          # systemd 服务配置
-│   ├── nginx/            # Nginx 反向代理配置
+│   ├── tests/            # API单元测试和集成测试（10+新增工作区测试）
 │   └── README.md         # Backend 部署文档
 │
+├── data/                 # 数据持久化层
+│   ├── logs/             # 原始日志
+│   ├── eval/             # 评测用例与报告
+│   └── workspaces/       # Agent 运行时 Markdown 工作区（NEW）
+│
 ├── gateway/              # LiteLLM API 中转层
-│   ├── scripts/          # 部署和启动脚本
-│   ├── systemd/          # systemd 服务配置
-│   ├── nginx/            # Nginx 反向代理配置
-│   ├── config.yaml       # LiteLLM 模型路由配置
-│   └── README.md         # Gateway 部署文档
-│
-├── web/                  # Next.js 前端（已完成）
-│   ├── src/
-│   │   ├── app/          # Next.js App Router
-│   │   ├── components/   # React组件（ChatMessage/ThinkingProcess/SourcePanel等）
-│   │   └── __tests__/    # 前端测试（Vitest + React Testing Library）
-│   └── README.md         # 前端部署文档
-│
+│   └── ...
+├── web/                  # Next.js 前端
+│   └── ...
 ├── docs/                 # 项目文档
-│   ├── P0任务实施进度报告.md  # 实施进度报告（最新）
-│   ├── AI专家项目分析报告.md
-│   ├── 部署配置完整性检查报告.md
-│   ├── FOTA智能诊断平台_系统设计方案.md
-│   ├── FOTA智能诊断平台_可行性方案（修订版v6）.md
-│   ├── FOTA_LLM_API中转方案.md
-│   └── LLM_429限流防御方案.md
-│
+│   ├── Agent内存_Markdown化重构方案.md  # 核心内存架构设计（NEW）
+│   ├── Workspace评测基准报告.md          # 评测结果与性能基准（NEW）
+│   └── ...
 └── scripts/              # 统一部署脚本
     └── deploy-all.sh     # 单机开发环境一键部署
 ```
@@ -164,11 +151,12 @@ open http://localhost:8000/docs
 | API测试 | 100% | ✅ 完成 |
 | MVP核心功能 | 100% | ✅ 完成 |
 | 前端交互功能 | 100% | ✅ 完成 |
-| 后端核心逻辑（在线诊断增强） | 70% | 🚧 进行中 |
+| **Agent 工作区内存重构 (Sprint 5)** | 100% | ✅ 完成 |
+| **后端核心逻辑（在线诊断增强）** | 90% | 🚧 进行中 |
 | 数据与演示场景 | 40% | 🚧 进行中 |
-| 评测与验收 | 0% | 📅 待开始 |
+| **评测与验收 (基准测试)** | 100% | ✅ 完成 |
 
-**总体进度**: 约 **85%**
+**总体进度**: 约 **95%**
 
 详细任务清单请查看：
 - [TODO.md](docs/TODO.md) - 项目任务清单（最新）
@@ -182,7 +170,9 @@ open http://localhost:8000/docs
 ### 快速入门
 
 - **[CLAUDE.md](CLAUDE.md)** - 完整项目文档（开发指南、API 文档、部署指南）⭐ 推荐首先阅读
-- **[TODO.md](docs/TODO.md)** - 项目任务清单（最新进度）⭐ 推荐查看
+- **[TODO.md](docs/TODO.md)** - 项目任务清单（最新进度）
+- **[Agent内存重构方案](docs/Agent内存_Markdown化重构方案.md)** - Sprint 5 核心架构设计文档 ⭐
+- **[Workspace评测报告](docs/Workspace评测基准报告.md)** - 系统性能与诊断质量基准报告 ⭐
 
 ### 实施报告
 
@@ -257,6 +247,6 @@ open http://localhost:8000/docs
 
 ---
 
-**项目状态**: 🚧 开发中（MVP已完成，前端UI已完成，后端在线诊断增强进行中）
-**最后更新**: 2026-04-04
+**项目状态**: 🚧 开发中（Sprint 5 工作区重构已通过，进入系统集成与演示场景准备阶段）
+**最后更新**: 2026-04-06
 **维护团队**: AI 开发专家

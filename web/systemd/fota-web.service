@@ -1,0 +1,44 @@
+# ============================================================
+# FOTA 智能诊断平台 - Web Frontend systemd 服务配置
+# ============================================================
+# 部署说明：本文件由部署脚本接管，最终落地于 /etc/systemd/system/
+# 依赖 Next.js 生产态 `npm run start` 拉起 (默认 3000 端口)
+
+[Unit]
+Description=FOTA Intelligent Diagnostic Platform - Web Frontend
+Documentation=https://github.com/your-org/velab
+After=network.target
+
+[Service]
+Type=simple
+User=fota-web
+Group=fota-web
+WorkingDirectory=/opt/fota-web
+
+# 加载 Next.js 生产环境变量
+EnvironmentFile=/opt/fota-web/.env.local
+Environment=NODE_ENV=production
+
+# Node 环境下的启动指令
+ExecStart=/usr/bin/npm run start
+
+# 日志输出接管
+StandardOutput=journal
+StandardError=journal
+
+# 崩断重试生命周期
+Restart=always
+RestartSec=5
+
+# Linux 生产应用层安全沙盒加固
+NoNewPrivileges=yes
+ProtectSystem=strict
+
+# 为 Next.js 放开工作缓存目录和读写白名单（运行态生成页面缓存）
+ReadWritePaths=/opt/fota-web/.next
+ReadWritePaths=/opt/fota-web
+
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
