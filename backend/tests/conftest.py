@@ -19,8 +19,10 @@ from models import Case, RawLogFile, DiagnosisEvent
 from models.log_file import ParseStatus
 
 
-# 测试数据库URL（使用内存SQLite）
-TEST_DATABASE_URL = "sqlite:///:memory:"
+# 测试数据库URL（优先从环境变量读取，默认为内存SQLite）
+import os
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+
 
 
 @pytest.fixture(scope="function")

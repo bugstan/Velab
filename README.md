@@ -91,7 +91,7 @@ open http://localhost:8000/docs
 详细部署步骤请参考：
 - [Backend 部署文档](backend/README.md)
 - [Gateway 部署文档](gateway/README.md)
-- [部署配置完整性检查报告](docs/部署配置完整性检查报告.md)
+- [生产部署指南](docs/生产部署指南_V1.md)
 
 ---
 
