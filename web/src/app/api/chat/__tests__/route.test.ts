@@ -44,7 +44,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(mockFetch).toHaveBeenCalledWith(
                 expect.stringContaining('/chat'),
@@ -79,7 +79,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(response.headers.get('Content-Type')).toBe('text/event-stream')
             expect(response.headers.get('Cache-Control')).toBe('no-cache')
@@ -103,7 +103,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(response.status).toBe(500)
             const body = await response.json()
@@ -125,7 +125,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(response.status).toBe(502)
             const body = await response.json()
@@ -144,7 +144,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(response.status).toBe(504)
             const body = await response.json()
@@ -167,7 +167,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(response.status).toBe(504)
             const body = await response.json()
@@ -196,7 +196,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(mockFetch).toHaveBeenCalled()
         })

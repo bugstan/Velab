@@ -58,7 +58,7 @@ describe('FeedbackButtons Component', () => {
     describe('复制功能', () => {
         it('点击复制按钮应该改变图标', async () => {
             const user = userEvent.setup()
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const copyButton = screen.getByTitle('Copy')
 
@@ -97,7 +97,7 @@ describe('FeedbackButtons Component', () => {
     describe('点赞/点踩功能', () => {
         it.skip('点击点赞应该激活点赞状态', async () => {
             const user = userEvent.setup()
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const likeButton = screen.getByTitle('Like')
 
@@ -110,7 +110,7 @@ describe('FeedbackButtons Component', () => {
 
         it.skip('再次点击点赞应该取消点赞', async () => {
             const user = userEvent.setup()
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const likeButton = screen.getByTitle('Like')
 
@@ -181,7 +181,7 @@ describe('FeedbackButtons Component', () => {
 
     describe('按钮样式', () => {
         it('所有按钮应该有 hover 效果', () => {
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const buttons = container.querySelectorAll('button')
             buttons.forEach(button => {
@@ -190,7 +190,7 @@ describe('FeedbackButtons Component', () => {
         })
 
         it('所有按钮应该有过渡动画', () => {
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const buttons = container.querySelectorAll('button')
             buttons.forEach(button => {
@@ -199,7 +199,7 @@ describe('FeedbackButtons Component', () => {
         })
 
         it('应该有顶部边框', () => {
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const wrapper = container.querySelector('[style*="border"]')
             expect(wrapper).toBeInTheDocument()
@@ -208,7 +208,7 @@ describe('FeedbackButtons Component', () => {
 
     describe('图标渲染', () => {
         it('每个按钮应该有 SVG 图标', () => {
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const buttons = container.querySelectorAll('button')
             buttons.forEach(button => {
@@ -218,7 +218,7 @@ describe('FeedbackButtons Component', () => {
         })
 
         it('点踩图标应该旋转 180 度', () => {
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const dislikeButton = screen.getByTitle('Dislike')
             const svg = dislikeButton.querySelector('svg')

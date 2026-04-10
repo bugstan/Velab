@@ -32,12 +32,18 @@ def test_db() -> Generator[Session, None, None]:
     
     每个测试函数使用独立的内存数据库
     """
+    # 根据数据库类型配置 connect_args
+    connect_args = {}
+    if TEST_DATABASE_URL.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+        
     # 创建测试引擎
     engine = create_engine(
         TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False},
+        connect_args=connect_args,
         poolclass=StaticPool,
     )
+
     
     # 创建所有表
     Base.metadata.create_all(bind=engine)

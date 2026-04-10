@@ -4,7 +4,7 @@
  * 测试主页面的完整功能流程
  */
 
-import { render, screen, fireEvent, waitFor } from '@/__tests__/utils/test-utils'
+import { render, screen, waitFor } from '@/__tests__/utils/test-utils'
 import Home from '@/app/page'
 import userEvent from '@testing-library/user-event'
 import { DEMO_SCENARIOS, PRESET_QUESTIONS } from '@/lib/types'
@@ -12,7 +12,7 @@ import { vi, describe, it, beforeEach, expect } from 'vitest'
 
 // Mock fetch for SSE
 const mockFetch = vi.fn()
-global.fetch = mockFetch as any
+global.fetch = mockFetch as unknown as typeof fetch
 
 describe('Home Page Integration Tests', () => {
     beforeEach(() => {

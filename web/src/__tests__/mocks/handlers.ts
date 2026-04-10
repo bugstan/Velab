@@ -11,7 +11,7 @@ const BACKEND_URL = 'http://localhost:8000'
 /**
  * SSE 事件生成器
  */
-function createSSEResponse(events: any[]) {
+function createSSEResponse(events: Record<string, unknown>[]) {
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
         start(controller) {
@@ -38,7 +38,7 @@ function createSSEResponse(events: any[]) {
 export const handlers = [
     // 聊天 API
     http.post(`${BACKEND_URL}/chat`, async ({ request }) => {
-        const body = await request.json() as any
+        await request.json()
 
         // 模拟 SSE 响应
         const events = [
