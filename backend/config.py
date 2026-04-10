@@ -67,10 +67,11 @@ class Settings(BaseSettings):
     # ── Redis 配置（待接入） ──
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDIS_PASSWORD: Optional[str] = None
 
     # ── LLM 配置 ──
     LITELLM_BASE_URL: Optional[str] = "http://127.0.0.1:4000/v1"
-    LITELLM_API_KEY: Optional[str] = "sk-fota-master-key"
+    LITELLM_API_KEY: Optional[str] = "sk-fota-virtual-key"
 
     # ── 存储配置 ──
     # 日志文件存储根目录
