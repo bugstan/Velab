@@ -1,6 +1,6 @@
 # FOTA 智能诊断平台 - Web 前端
 
-基于 Next.js 14 构建的 FOTA 诊断平台前端应用，提供实时流式诊断交互界面。
+基于 Next.js 16 构建的 FOTA 诊断平台前端应用，提供实时流式诊断交互界面。
 
 ---
 
@@ -28,7 +28,7 @@ web/
 ├── package.json               # 依赖配置
 ├── tsconfig.json              # TypeScript 配置
 ├── next.config.ts             # Next.js 配置
-└── tailwind.config.ts         # Tailwind CSS 配置
+└── postcss.config.mjs          # PostCSS / Tailwind CSS v4 配置
 ```
 
 ---
@@ -157,7 +157,7 @@ sudo systemctl start fota-web
 
 ### 技术栈
 
-- **框架**: Next.js 14 (App Router)
+- **框架**: Next.js 16 (App Router)
 - **语言**: TypeScript
 - **样式**: Tailwind CSS + CSS Variables
 - **状态管理**: React Hooks

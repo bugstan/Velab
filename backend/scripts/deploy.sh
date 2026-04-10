@@ -90,13 +90,20 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
     if [ -f "$DEPLOY_DIR/.env.example" ]; then
         cp $DEPLOY_DIR/.env.example $DEPLOY_DIR/.env
         echo -e "${YELLOW}⚠ 已从 .env.example 创建 .env 文件${NC}"
-        echo -e "${YELLOW}⚠ 请编辑 $DEPLOY_DIR/.env 填入真实配置${NC}"
     else
         echo -e "${RED}错误: .env.example 文件不存在${NC}"
         exit 1
     fi
+fi
+
+# 自动生成强随机 POSTGRES_PASSWORD（当前值为默认弱密码时替换）
+CURRENT_PG_PASS=$(grep "^POSTGRES_PASSWORD=" "$DEPLOY_DIR/.env" | cut -d'=' -f2)
+if [ "$CURRENT_PG_PASS" = "fota_password" ] || [ -z "$CURRENT_PG_PASS" ]; then
+    NEW_PG_PASS="$(openssl rand -hex 20)"
+    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PG_PASS/" "$DEPLOY_DIR/.env"
+    echo -e "${GREEN}✓ 已自动生成强随机 POSTGRES_PASSWORD${NC}"
 else
-    echo -e "${YELLOW}⚠ .env 文件已存在，跳过创建${NC}"
+    echo -e "${YELLOW}⚠ POSTGRES_PASSWORD 已存在自定义值，跳过生成${NC}"
 fi
 
 chmod 600 $DEPLOY_DIR/.env
@@ -110,6 +117,8 @@ if [ -f "$BACKEND_DIR/scripts/init_postgres.sh" ]; then
 fi
 
 # 利用 try...except 防止因为数据库未运行引发报错断融（容错机制）
+# ⚠ 注意：create_tables() 使用 SQLAlchemy create_all()，只建新表，不执行列变更/迁移。
+# 若本次升级涉及 Model 字段变更，需手动执行 SQL 或引入 Alembic 迁移。
 sudo -u fota sh -c "cd $DEPLOY_DIR && venv/bin/python -c '
 try:
     from database import db_manager
@@ -126,8 +135,15 @@ if [ -f "$BACKEND_DIR/systemd/fota-backend.service" ]; then
     cp $BACKEND_DIR/systemd/fota-backend.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable fota-backend
-    systemctl restart fota-backend
-    echo -e "${GREEN}✓ systemd 服务已安装、启用并重启${NC}"
+    systemctl restart fota-backend || true
+    sleep 2
+    if systemctl is-active --quiet fota-backend; then
+        echo -e "${GREEN}✓ systemd 服务已安装并正常运行${NC}"
+    else
+        echo -e "${YELLOW}⚠ systemd 服务已安装，但当前未在运行状态${NC}"
+        echo -e "${YELLOW}  常见原因: .env 中必要配置项（如 POSTGRES_PASSWORD）未填写${NC}"
+        echo -e "${YELLOW}  排查命令: journalctl -u fota-backend -n 30${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠ systemd 服务文件不存在，跳过安装${NC}"
 fi
