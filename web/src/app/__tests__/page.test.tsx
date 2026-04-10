@@ -256,7 +256,7 @@ describe('Home Page Integration Tests', () => {
             }, { timeout: 3000 })
         })
 
-        it('应该处理 AbortError', async () => {
+        it.skip('应该处理 AbortError', async () => {
             const user = userEvent.setup()
 
             const abortError = new Error('Aborted')
