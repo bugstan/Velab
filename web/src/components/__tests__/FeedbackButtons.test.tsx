@@ -58,7 +58,7 @@ describe('FeedbackButtons Component', () => {
     describe('复制功能', () => {
         it('点击复制按钮应该改变图标', async () => {
             const user = userEvent.setup()
-            render(<FeedbackButtons />)
+            const { container } = render(<FeedbackButtons />)
 
             const copyButton = screen.getByTitle('Copy')
 
