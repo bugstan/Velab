@@ -159,7 +159,7 @@ class TestIntegration:
             }
         )
         
-        response_400 = client.post(
+        response_409 = client.post(
             "/api/cases",
             json={
                 "case_id": "duplicate_case",
@@ -168,4 +168,4 @@ class TestIntegration:
                 "issue_description": "Duplicate test 2"
             }
         )
-        assert response_400.status_code == 400
+        assert response_409.status_code == 409

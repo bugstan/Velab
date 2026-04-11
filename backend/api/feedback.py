@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -42,6 +42,7 @@ class DiagnosisFeedbackCreate(BaseModel):
     evidence_log_ids: List[int] = Field(default_factory=list, description="关联日志事件 ID")
     evidence_jira_ids: List[str] = Field(default_factory=list, description="关联 Jira Issue ID")
     evidence_doc_ids: List[str] = Field(default_factory=list, description="关联文档 chunk ID")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="其他元数据")
 
 
 class DiagnosisFeedbackResponse(BaseModel):
@@ -55,6 +56,7 @@ class DiagnosisFeedbackResponse(BaseModel):
     confirmed_at: datetime
     engineer_notes: Optional[str]
     created_at: datetime
+    metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="meta_data")
 
     class Config:
         from_attributes = True
@@ -104,6 +106,7 @@ def submit_feedback(
         evidence_log_ids=data.evidence_log_ids,
         evidence_jira_ids=data.evidence_jira_ids,
         evidence_doc_ids=data.evidence_doc_ids,
+        meta_data=data.metadata,
     )
 
     db.add(feedback)

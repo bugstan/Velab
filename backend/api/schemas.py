@@ -57,7 +57,8 @@ class CaseResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="meta_data")
+
     
     class Config:
         from_attributes = True
@@ -96,6 +97,7 @@ class LogFileResponse(BaseModel):
     error_message: Optional[str]
     uploaded_at: datetime
     updated_at: datetime
+    metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="meta_data")
     
     class Config:
         from_attributes = True

@@ -181,7 +181,7 @@ describe('FeedbackButtons Component', () => {
 
     describe('按钮样式', () => {
         it('所有按钮应该有 hover 效果', () => {
-            render(<FeedbackButtons />)
+            const { container } = render(<FeedbackButtons />)
 
             const buttons = container.querySelectorAll('button')
             buttons.forEach(button => {
@@ -190,7 +190,7 @@ describe('FeedbackButtons Component', () => {
         })
 
         it('所有按钮应该有过渡动画', () => {
-            render(<FeedbackButtons />)
+            const { container } = render(<FeedbackButtons />)
 
             const buttons = container.querySelectorAll('button')
             buttons.forEach(button => {
@@ -199,7 +199,7 @@ describe('FeedbackButtons Component', () => {
         })
 
         it('应该有顶部边框', () => {
-            render(<FeedbackButtons />)
+            const { container } = render(<FeedbackButtons />)
 
             const wrapper = container.querySelector('[style*="border"]')
             expect(wrapper).toBeInTheDocument()
@@ -208,7 +208,7 @@ describe('FeedbackButtons Component', () => {
 
     describe('图标渲染', () => {
         it('每个按钮应该有 SVG 图标', () => {
-            render(<FeedbackButtons />)
+            const { container } = render(<FeedbackButtons />)
 
             const buttons = container.querySelectorAll('button')
             buttons.forEach(button => {
