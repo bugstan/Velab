@@ -169,7 +169,7 @@ class TestEventsAPI:
     
     def test_get_event_not_found(self, client: TestClient):
         """测试获取不存在的事件"""
-        response = client.get("/api/events/nonexistent_event")
+        response = client.get("/api/events/999999")
         
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]

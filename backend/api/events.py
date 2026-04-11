@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
 from database import get_db
-from models import DiagnosisEvent
+from models import DiagnosisEvent, Case
 from api.schemas import (
     EventQuery,
     EventResponse,
@@ -149,6 +149,14 @@ def get_case_event_summary(
     """
     from sqlalchemy import func
     
+    # 检查案例是否存在
+    case = db.query(Case).filter_by(case_id=case_id).first()
+    if not case:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Case {case_id} not found"
+        )
+        
     # 总事件数
     total_events = db.query(func.count(DiagnosisEvent.id)).filter_by(case_id=case_id).scalar()
     
@@ -216,6 +224,14 @@ def export_events(
     Returns:
         文件流响应
     """
+    # 检查案例是否存在
+    case = db.query(Case).filter_by(case_id=export_data.case_id).first()
+    if not case:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Case {export_data.case_id} not found"
+        )
+        
     # 构建查询
     query = db.query(DiagnosisEvent).filter_by(case_id=export_data.case_id)
     
