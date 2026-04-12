@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@/__tests__/utils/test-utils'
+import { render, screen } from '@/__tests__/utils/test-utils'
 import Home from '@/app/page'
 import userEvent from '@testing-library/user-event'
 import { vi, describe, it, beforeEach, expect } from 'vitest'

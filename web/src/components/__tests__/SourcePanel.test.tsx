@@ -105,7 +105,7 @@ describe('SourcePanel Component', () => {
   });
 
   it('displays default icon and label for unknown source type', () => {
-    // @ts-ignore
+    // @ts-expect-error - Testing unknown source type
     const unknownSource: SourceReference = { title: 'Unknown', type: 'unknown' };
     render(<SourcePanel sources={[unknownSource]} />);
     

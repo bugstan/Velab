@@ -19,7 +19,7 @@ describe('ThinkingProcess Component', () => {
         })
 
         it('默认应该是折叠状态', () => {
-            const { container } = render(<ThinkingProcess steps={mockAgentSteps} />)
+            render(<ThinkingProcess steps={mockAgentSteps} />)
 
             // 步骤详情不应该显示
             expect(screen.queryByText('Step 1:')).not.toBeInTheDocument()
@@ -198,10 +198,9 @@ describe('ThinkingProcess Component', () => {
 
     describe('边界情况', () => {
         it('应该处理空步骤数组', () => {
-            const { container } = render(<ThinkingProcess steps={[]} />)
+            render(<ThinkingProcess steps={[]} />)
 
             expect(screen.getByText('Thinking process')).toBeInTheDocument()
-            expect(container).toBeInTheDocument()
         })
 
         it('应该处理单个步骤', () => {
