@@ -108,7 +108,7 @@ class TestCasesAPI:
         for i in range(15):
             case = Case(
                 case_id=f"page_case_{i:03d}",
-                vin=f"VIN{i:017d}",
+                vin=f"VIN{i:014d}",
                 vehicle_model="Model X",
                 issue_description=f"Issue {i}"
             )
