@@ -133,20 +133,22 @@ check_dependencies() {
     
     print_info "检查 requirements.txt 中的依赖包..."
     
-    # 关键依赖包列表
+    # 关键依赖包列表（格式：pip包名:Python模块名，两者不同时须分别指定）
     CRITICAL_PACKAGES=(
-        "fastapi"
-        "uvicorn"
-        "sqlalchemy"
-        "psycopg2-binary"
-        "pydantic"
-        "python-dotenv"
+        "fastapi:fastapi"
+        "uvicorn:uvicorn"
+        "sqlalchemy:sqlalchemy"
+        "psycopg2-binary:psycopg2"
+        "pydantic:pydantic"
+        "python-dotenv:dotenv"
     )
     
     MISSING_PACKAGES=()
     
-    for package in "${CRITICAL_PACKAGES[@]}"; do
-        if python3 -c "import importlib.util; import sys; sys.exit(0 if importlib.util.find_spec('${package//-/_}') else 1)" 2>/dev/null; then
+    for entry in "${CRITICAL_PACKAGES[@]}"; do
+        package="${entry%%:*}"
+        module="${entry##*:}"
+        if python3 -c "import importlib.util; import sys; sys.exit(0 if importlib.util.find_spec('$module') else 1)" 2>/dev/null; then
             print_info "✓ $package"
         else
             MISSING_PACKAGES+=("$package")
@@ -178,19 +180,27 @@ check_env_variables() {
         print_warning "未找到 .env 文件"
     fi
     
-    # 必需的环境变量
+    # 必需的环境变量（对应 config.py 中无默认值或必须用户填写的变量）
     REQUIRED_VARS=(
-        "DATABASE_URL"
-        "SECRET_KEY"
+        "DEPLOYMENT_MODE"
+        "POSTGRES_PASSWORD"
     )
     
-    # 可选的环境变量
+    # 可选的环境变量（由应用或运维脚本使用）
     OPTIONAL_VARS=(
-        "REDIS_URL"
+        "POSTGRES_HOST"
+        "POSTGRES_PORT"
+        "POSTGRES_USER"
+        "POSTGRES_DB"
+        "REDIS_HOST"
+        "REDIS_PORT"
+        "REDIS_PASSWORD"
         "MINIO_ENDPOINT"
         "MINIO_ACCESS_KEY"
         "MINIO_SECRET_KEY"
-        "LITELLM_GATEWAY_URL"
+        "LITELLM_BASE_URL"
+        "LITELLM_API_KEY"
+        "STORAGE_ROOT"
     )
     
     MISSING_REQUIRED=()
@@ -226,34 +236,27 @@ check_env_variables() {
 check_postgresql() {
     print_header "检查 PostgreSQL 连接"
     
-    if [ -z "$DATABASE_URL" ]; then
-        print_warning "DATABASE_URL 未设置，跳过 PostgreSQL 检查"
+    if [ -z "$POSTGRES_PASSWORD" ]; then
+        print_warning "POSTGRES_PASSWORD 未设置，跳过 PostgreSQL 检查"
         return
     fi
     
     print_info "测试数据库连接..."
     
-    # 使用 Python 测试连接
-    python3 << EOF
+    # 使用 Python 测试连接（从 POSTGRES_* 变量拼接连接信息）
+    # 注意：if python3 << EOF 模式可绕过 set -e，使 Python 非零退出时走 else 分支而非终止脚本
+    if python3 << EOF
 import sys
 import os
 try:
     import psycopg2
-    from urllib.parse import urlparse
     
-    db_url = os.environ.get('DATABASE_URL', '')
-    if not db_url:
-        print("DATABASE_URL 为空")
-        sys.exit(1)
-    
-    # 解析 DATABASE_URL
-    result = urlparse(db_url)
     conn = psycopg2.connect(
-        database=result.path[1:],
-        user=result.username,
-        password=result.password,
-        host=result.hostname,
-        port=result.port or 5432
+        database=os.environ.get('POSTGRES_DB', 'fota_db'),
+        user=os.environ.get('POSTGRES_USER', 'postgres'),
+        password=os.environ.get('POSTGRES_PASSWORD', ''),
+        host=os.environ.get('POSTGRES_HOST', 'localhost'),
+        port=int(os.environ.get('POSTGRES_PORT', '5432'))
     )
     
     cursor = conn.cursor()
@@ -263,8 +266,6 @@ try:
     
     cursor.close()
     conn.close()
-    sys.exit(0)
-    
 except ImportError:
     print("未安装 psycopg2-binary")
     sys.exit(1)
@@ -272,8 +273,7 @@ except Exception as e:
     print(f"连接失败: {e}")
     sys.exit(1)
 EOF
-    
-    if [ $? -eq 0 ]; then
+    then
         print_success "PostgreSQL 连接正常"
     else
         print_error "PostgreSQL 连接失败"
@@ -287,30 +287,25 @@ EOF
 check_redis() {
     print_header "检查 Redis 连接（可选）"
     
-    if [ -z "$REDIS_URL" ]; then
-        print_info "REDIS_URL 未设置，跳过 Redis 检查"
-        return
-    fi
+    REDIS_HOST_VAL="${REDIS_HOST:-localhost}"
+    REDIS_PORT_VAL="${REDIS_PORT:-6379}"
     
-    print_info "测试 Redis 连接..."
+    print_info "测试 Redis 连接 ($REDIS_HOST_VAL:$REDIS_PORT_VAL)..."
     
-    python3 << EOF
+    if python3 << EOF
 import sys
 import os
 try:
     import redis
     
-    redis_url = os.environ.get('REDIS_URL', '')
-    if not redis_url:
-        print("REDIS_URL 为空")
-        sys.exit(1)
+    host = os.environ.get('REDIS_HOST', 'localhost')
+    port = int(os.environ.get('REDIS_PORT', '6379'))
+    password = os.environ.get('REDIS_PASSWORD') or None
     
-    r = redis.from_url(redis_url)
+    r = redis.Redis(host=host, port=port, password=password, socket_connect_timeout=3)
     r.ping()
     info = r.info('server')
     print(f"Redis 版本: {info['redis_version']}")
-    sys.exit(0)
-    
 except ImportError:
     print("未安装 redis")
     sys.exit(1)
@@ -318,8 +313,7 @@ except Exception as e:
     print(f"连接失败: {e}")
     sys.exit(1)
 EOF
-    
-    if [ $? -eq 0 ]; then
+    then
         print_success "Redis 连接正常"
     else
         print_warning "Redis 连接失败（可选服务）"
@@ -340,7 +334,7 @@ check_minio() {
     
     print_info "测试 MinIO 连接..."
     
-    python3 << EOF
+    if python3 << EOF
 import sys
 import os
 try:
@@ -363,8 +357,6 @@ try:
     # 测试连接
     buckets = client.list_buckets()
     print(f"MinIO 连接成功，存储桶数量: {len(buckets)}")
-    sys.exit(0)
-    
 except ImportError:
     print("未安装 minio")
     sys.exit(1)
@@ -372,8 +364,7 @@ except Exception as e:
     print(f"连接失败: {e}")
     sys.exit(1)
 EOF
-    
-    if [ $? -eq 0 ]; then
+    then
         print_success "MinIO 连接正常"
     else
         print_warning "MinIO 连接失败（可选服务）"

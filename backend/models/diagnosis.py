@@ -10,8 +10,35 @@ from typing import Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, Text, Float, ForeignKey, JSON, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
+from sqlalchemy.types import TypeDecorator, TEXT
+import json
 
 from .base import Base
+
+# A portable Array type that works on SQLite (as JSON string) and Postgres
+class PortableArray(TypeDecorator):
+    impl = TEXT
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_ARRAY(TEXT))
+        else:
+            return dialect.type_descriptor(TEXT)
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        return json.loads(value)
 
 
 class ConfirmedDiagnosis(Base):
@@ -31,7 +58,7 @@ class ConfirmedDiagnosis(Base):
     # 诊断结果
     root_cause = Column(Text, nullable=False)
     confidence = Column(Float, nullable=False)
-    recommendations = Column(PG_ARRAY(Text))
+    recommendations = Column(PortableArray)
     
     # 工程师确认信息
     confirmed_by = Column(String(100))  # 工程师ID或邮箱
@@ -40,9 +67,9 @@ class ConfirmedDiagnosis(Base):
     engineer_notes = Column(Text)
     
     # 关联证据
-    evidence_log_ids = Column(PG_ARRAY(Integer))  # 关联的 diagnosis_events.id
-    evidence_jira_ids = Column(PG_ARRAY(String(200)))  # 关联的 Jira Issue ID
-    evidence_doc_ids = Column(PG_ARRAY(String(200)))  # 关联的文档 chunk ID
+    evidence_log_ids = Column(PortableArray)  # 关联的 diagnosis_events.id
+    evidence_jira_ids = Column(PortableArray)  # 关联的 Jira Issue ID
+    evidence_doc_ids = Column(PortableArray)  # 关联的文档 chunk ID
     
     # 向量化（用于相似案例检索）
     # diagnosis_embedding = Column(Vector(1536))  # 需要pgvector扩展

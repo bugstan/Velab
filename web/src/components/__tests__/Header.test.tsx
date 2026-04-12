@@ -100,7 +100,7 @@ describe('Header Component', () => {
 
         it('箭头图标应该根据状态旋转', async () => {
             const user = userEvent.setup()
-            const { container } = render(
+            render(
                 <Header currentScenario={currentScenario} onScenarioChange={mockOnScenarioChange} />
             )
 
@@ -191,7 +191,7 @@ describe('Header Component', () => {
     describe('点击外部关闭', () => {
         it('点击外部应该关闭下拉菜单', async () => {
             const user = userEvent.setup()
-            const { container } = render(
+            render(
                 <div>
                     <Header currentScenario={currentScenario} onScenarioChange={mockOnScenarioChange} />
                     <div data-testid="outside">Outside element</div>

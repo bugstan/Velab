@@ -21,16 +21,16 @@ WorkingDirectory=/opt/litellm-proxy
 # 加载环境变量
 EnvironmentFile=/opt/litellm-proxy/.env
 
-# 启动命令
-ExecStart=/opt/litellm-proxy/venv/bin/litellm \
+# 启动命令（host/port 从 EnvironmentFile 读取，支持通过 $GATEWAY_LOG_PATH 重定向日志）
+ExecStart=/bin/sh -c 'exec /opt/litellm-proxy/venv/bin/litellm \
     --config /opt/litellm-proxy/config.yaml \
-    --host 127.0.0.1 \
-    --port 4000 \
-    --num_workers 4
+    --host ${HOST:-127.0.0.1} \
+    --port ${PORT:-4000} \
+    --num_workers 4 >> ${GATEWAY_LOG_PATH:-/opt/litellm-proxy/logs/request.log} 2>&1'
 
-# 日志输出到 journald（可用 journalctl -u litellm 查看）
-StandardOutput=journal
-StandardError=journal
+# 日志输出处理
+StandardOutput=inherit
+StandardError=inherit
 
 # 自动重启
 Restart=always

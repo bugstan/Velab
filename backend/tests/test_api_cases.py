@@ -47,7 +47,7 @@ class TestCasesAPI:
             }
         )
         
-        assert response.status_code == 400
+        assert response.status_code == 409
         assert "already exists" in response.json()["detail"]
     
     def test_get_case(self, client: TestClient, sample_case: Case):
@@ -108,7 +108,7 @@ class TestCasesAPI:
         for i in range(15):
             case = Case(
                 case_id=f"page_case_{i:03d}",
-                vin=f"VIN{i:017d}",
+                vin=f"VIN{i:014d}",
                 vehicle_model="Model X",
                 issue_description=f"Issue {i}"
             )

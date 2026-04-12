@@ -91,7 +91,7 @@ open http://localhost:8000/docs
 详细部署步骤请参考：
 - [Backend 部署文档](backend/README.md)
 - [Gateway 部署文档](gateway/README.md)
-- [部署配置完整性检查报告](docs/部署配置完整性检查报告.md)
+- [生产部署指南](docs/生产部署指南_V1.md)
 
 ---
 
@@ -178,12 +178,10 @@ open http://localhost:8000/docs
 
 - **[MVP实施总结报告](docs/MVP实施总结报告.md)** - MVP实施详细报告 ⭐ 最新完成
 - [P0任务实施进度报告](docs/P0任务实施进度报告.md) - P0离线预处理管线实施报告
-- [环境安装配置报告](docs/环境安装配置报告.md) - 环境配置详细报告
-
 ### 系统设计
 
 - [AI专家项目分析报告](docs/AI专家项目分析报告.md) - 项目深度分析（⭐⭐⭐⭐⭐ 4.8/5.0）
-- [FOTA智能诊断平台_系统设计方案](docs/FOTA智能诊断平台_系统设计方案.md) - 系统架构设计
+- [技术设计方案（修订版 v6）](docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 系统架构设计（最终执行版）
 - [FOTA智能诊断平台_可行性方案（修订版v6）](docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 可行性分析
 
 ### 部署运维
@@ -191,7 +189,7 @@ open http://localhost:8000/docs
 - [Backend README](backend/README.md) - Backend 部署文档
 - [Gateway README](gateway/README.md) - Gateway 部署文档
 - [Web README](web/README.md) - 前端部署文档
-- [部署配置完整性检查报告](docs/部署配置完整性检查报告.md) - 配置完整性检查
+- [生产部署指南](docs/生产部署指南_V1.md) - 生产环境完整部署指南
 
 ### 技术方案
 
@@ -233,7 +231,7 @@ open http://localhost:8000/docs
 如有问题，请查看：
 1. 各组件的 README 文档
 2. [docs](docs/) 目录下的详细设计文档
-3. [部署配置完整性检查报告](docs/部署配置完整性检查报告.md)
+3. [生产部署指南](docs/生产部署指南_V1.md)
 
 ---
 

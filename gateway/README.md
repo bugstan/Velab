@@ -52,7 +52,7 @@
 # backend/.env
 DEPLOYMENT_MODE=A                              # 场景A
 LITELLM_BASE_URL=https://gateway.fota.com/v1  # Gateway地址
-LITELLM_API_KEY=sk-fota-master-key             # Gateway Master Key
+LITELLM_API_KEY=sk-fota-virtual-key            # Gateway Virtual Key（auto-synced by deploy-all.sh）
 ```
 
 #### 场景 B：平台在海外 → 无需 Gateway 服务器 ✅

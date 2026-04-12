@@ -37,7 +37,7 @@ class TestEventsAPI:
         
         # 验证事件结构
         first_event = data["items"][0]
-        assert "event_id" in first_event
+        assert "id" in first_event
         assert "message" in first_event
         assert "level" in first_event
     
@@ -53,7 +53,7 @@ class TestEventsAPI:
             json={
                 "case_id": sample_case.case_id,
                 "source_type": "android",
-                "level": "info",
+                "level": "INFO",
                 "skip": 0,
                 "limit": 10
             }
@@ -66,7 +66,7 @@ class TestEventsAPI:
         # 验证过滤结果
         for event in data["items"]:
             assert event["source_type"] == "android"
-            assert event["level"] == "info"
+            assert event["level"] == "INFO"
     
     def test_query_events_with_time_range(
         self, 
@@ -158,18 +158,18 @@ class TestEventsAPI:
         sample_events
     ):
         """测试获取单个事件"""
-        event_id = sample_events[0].event_id
+        event_id = sample_events[0].id
         response = client.get(f"/api/events/{event_id}")
         
         assert response.status_code == 200
         data = response.json()
-        assert data["event_id"] == event_id
+        assert data["id"] == event_id
         assert "message" in data
         assert "level" in data
     
     def test_get_event_not_found(self, client: TestClient):
         """测试获取不存在的事件"""
-        response = client.get("/api/events/nonexistent_event")
+        response = client.get("/api/events/999999")
         
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
@@ -241,7 +241,7 @@ class TestEventsAPI:
         
         # 验证CSV内容
         content = response.text
-        assert "event_id" in content  # CSV header
+        assert "id" in content  # CSV header
         assert "message" in content
         assert len(content.split("\n")) > 1  # 至少有header和数据行
     

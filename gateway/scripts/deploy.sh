@@ -70,9 +70,13 @@ echo -e "${GREEN}✓ 代码同步完成并设置权限${NC}"
 
 # 5. 创建 Python 虚拟环境并安装 LiteLLM
 echo -e "${BLUE}[5/7] 配置 Python 虚拟环境...${NC}"
-if [ ! -d "$DEPLOY_DIR/venv" ]; then
+if [ ! -f "$DEPLOY_DIR/venv/bin/pip" ]; then
+    # 目录可能存在但不完整（pip 等关键文件缺失），先清理再重建
+    [ -d "$DEPLOY_DIR/venv" ] && rm -rf "$DEPLOY_DIR/venv"
     sudo -u litellm python3 -m venv $DEPLOY_DIR/venv
     echo -e "${GREEN}✓ 虚拟环境已创建${NC}"
+else
+    echo -e "${YELLOW}⚠ 虚拟环境已存在，跳过重建${NC}"
 fi
 
 echo -e "${BLUE}安装 LiteLLM 及其扩展依赖 (Prometheus)...${NC}"
@@ -108,8 +112,15 @@ if [ -f "$GATEWAY_DIR/systemd/litellm.service" ]; then
     cp $GATEWAY_DIR/systemd/litellm.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable litellm
-    systemctl restart litellm
-    echo -e "${GREEN}✓ systemd 服务已安装、启用并重启${NC}"
+    systemctl restart litellm || true
+    sleep 2
+    if systemctl is-active --quiet litellm; then
+        echo -e "${GREEN}✓ systemd 服务已安装并正常运行${NC}"
+    else
+        echo -e "${YELLOW}⚠ systemd 服务已安装，但当前未在运行状态${NC}"
+        echo -e "${YELLOW}  常见原因: .env 中含占位值（xxxxx）或 API Key 无效${NC}"
+        echo -e "${YELLOW}  排查命令: journalctl -u litellm -n 30${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠ systemd 服务文件不存在，跳过安装${NC}"
 fi

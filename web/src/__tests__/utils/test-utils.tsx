@@ -4,7 +4,7 @@
  * 提供常用的测试辅助函数和自定义渲染器
  */
 
-import React, { ReactElement } from 'react'
+import { ReactElement } from 'react'
 import { render, RenderOptions } from '@testing-library/react'
 
 /**

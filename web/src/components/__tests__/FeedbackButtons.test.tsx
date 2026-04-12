@@ -97,7 +97,7 @@ describe('FeedbackButtons Component', () => {
     describe('点赞/点踩功能', () => {
         it.skip('点击点赞应该激活点赞状态', async () => {
             const user = userEvent.setup()
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const likeButton = screen.getByTitle('Like')
 
@@ -110,7 +110,7 @@ describe('FeedbackButtons Component', () => {
 
         it.skip('再次点击点赞应该取消点赞', async () => {
             const user = userEvent.setup()
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const likeButton = screen.getByTitle('Like')
 
@@ -218,7 +218,7 @@ describe('FeedbackButtons Component', () => {
         })
 
         it('点踩图标应该旋转 180 度', () => {
-            const { container } = render(<FeedbackButtons />)
+            render(<FeedbackButtons />)
 
             const dislikeButton = screen.getByTitle('Dislike')
             const svg = dislikeButton.querySelector('svg')

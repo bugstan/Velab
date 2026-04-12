@@ -38,12 +38,42 @@ WEB_DIR="$PROJECT_DIR/web"
 echo -e "${BLUE}项目目录: $PROJECT_DIR${NC}"
 echo ""
 
-# 询问部署模式
-echo -e "${BLUE}请选择部署模式:${NC}"
-echo -e "  ${GREEN}A${NC} - 场景 A（平台在国内，需要 Gateway 中转）"
-echo -e "  ${GREEN}B${NC} - 场景 B（平台在海外，直连 LLM API）"
-echo ""
-read -p "请输入选择 (A/B): " DEPLOYMENT_MODE
+# ── 命令行参数解析（支持非交互式 / CI 调用）──
+# 用法: sudo ./scripts/deploy-all.sh [--mode A|B] [--domain DOMAIN]
+DEPLOYMENT_MODE=""
+SERVER_DOMAIN=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --mode|-m)
+            DEPLOYMENT_MODE="$(echo "$2" | tr '[:lower:]' '[:upper:]')"
+            shift 2
+            ;;
+        --domain|-d)
+            SERVER_DOMAIN="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "用法: $0 [--mode A|B] [--domain DOMAIN]"
+            echo "  --mode,   -m   部署场景：A（国内 Gateway 中转）或 B（海外直连 LLM API）"
+            echo "  --domain, -d   平台访问地址（域名或 IP，留空则交互式输入，默认 localhost）"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}错误: 未知参数 $1，使用 --help 查看用法${NC}"
+            exit 1
+            ;;
+    esac
+done
+
+# 询问部署模式（仅当未通过 --mode 参数指定时）
+if [ -z "$DEPLOYMENT_MODE" ]; then
+    echo -e "${BLUE}请选择部署模式:${NC}"
+    echo -e "  ${GREEN}A${NC} - 场景 A（平台在国内，需要 Gateway 中转）"
+    echo -e "  ${GREEN}B${NC} - 场景 B（平台在海外，直连 LLM API）"
+    echo ""
+    read -p "请输入选择 (A/B): " DEPLOYMENT_MODE
+fi
 
 if [[ ! "$DEPLOYMENT_MODE" =~ ^[AaBb]$ ]]; then
     echo -e "${RED}错误: 无效的选择${NC}"
@@ -54,10 +84,12 @@ DEPLOYMENT_MODE=$(echo "$DEPLOYMENT_MODE" | tr '[:lower:]' '[:upper:]')
 echo -e "${GREEN}✓ 已选择场景 $DEPLOYMENT_MODE${NC}"
 echo ""
 
-# 询问访问域名/IP
-echo -e "${BLUE}请输入该平台的访问地址（域名或公网IP）:${NC}"
-echo -e "${YELLOW}提示: 如果仅本地测试可直接回车使用 localhost${NC}"
-read -p "访问地址 [localhost]: " SERVER_DOMAIN
+# 询问访问域名/IP（仅当未通过 --domain 参数指定时）
+if [ -z "$SERVER_DOMAIN" ]; then
+    echo -e "${BLUE}请输入该平台的访问地址（域名或公网IP）:${NC}"
+    echo -e "${YELLOW}提示: 如果仅本地测试可直接回车使用 localhost${NC}"
+    read -p "访问地址 [localhost]: " SERVER_DOMAIN
+fi
 SERVER_DOMAIN=${SERVER_DOMAIN:-localhost}
 echo -e "${GREEN}✓ 访问地址已设置为: $SERVER_DOMAIN${NC}"
 echo ""
@@ -124,6 +156,43 @@ if [ -f "/opt/fota-backend/.env" ]; then
             sed -i "s/^LITELLM_API_KEY=.*/LITELLM_API_KEY=$NEW_KEY/" /opt/fota-backend/.env
             echo -e "${GREEN}✓ 已自动生成并同步高强度内部鉴权密钥${NC}"
         fi
+    fi
+
+    # 检测 Backend POSTGRES_PASSWORD 是否仍为弱默认值（正常情况 backend/deploy.sh 已自动替换）
+    PG_PASS=$(grep "^POSTGRES_PASSWORD=" /opt/fota-backend/.env | cut -d'=' -f2)
+    if [ "$PG_PASS" = "fota_password" ] || [ -z "$PG_PASS" ]; then
+        echo -e "${RED}✗ 安全警告: POSTGRES_PASSWORD 仍为默认弱密码，请立即修改并重新初始化数据库:${NC}"
+        echo -e "${YELLOW}  sudo nano /opt/fota-backend/.env${NC}"
+    else
+        echo -e "${GREEN}✓ POSTGRES_PASSWORD 已设置为强随机密码${NC}"
+    fi
+fi
+
+# 检测 Gateway LLM API Key 占位值（仅场景 A）
+if [ "$DEPLOYMENT_MODE" = "A" ] && [ -f "/opt/litellm-proxy/.env" ]; then
+    PLACEHOLDER_KEYS=()
+    for var in ANTHROPIC_API_KEY ANTHROPIC_API_KEY_1 ANTHROPIC_API_KEY_2 OPENAI_API_KEY; do
+        val=$(grep "^${var}=" /opt/litellm-proxy/.env | cut -d'=' -f2)
+        if [[ "$val" == *"xxxx"* ]] || [ -z "$val" ]; then
+            PLACEHOLDER_KEYS+=("$var")
+        fi
+    done
+    if [ ${#PLACEHOLDER_KEYS[@]} -gt 0 ]; then
+        echo -e "${RED}✗ 以下 LLM API Key 仍为占位值，Gateway 将无法正常工作:${NC}"
+        for k in "${PLACEHOLDER_KEYS[@]}"; do
+            echo -e "${RED}  - $k${NC}"
+        done
+        echo -e "${YELLOW}  请立即填写: sudo nano /opt/litellm-proxy/.env${NC}"
+    fi
+fi
+
+# 检测 Backend LLM API Key 占位值（仅场景 B）
+if [ "$DEPLOYMENT_MODE" = "B" ] && [ -f "/opt/fota-backend/.env" ]; then
+    ANT_KEY=$(grep "^ANTHROPIC_API_KEY=" /opt/fota-backend/.env | cut -d'=' -f2)
+    OAI_KEY=$(grep "^OPENAI_API_KEY=" /opt/fota-backend/.env | cut -d'=' -f2)
+    if [ -z "$ANT_KEY" ] && [ -z "$OAI_KEY" ]; then
+        echo -e "${RED}✗ ANTHROPIC_API_KEY 和 OPENAI_API_KEY 均为空，Backend 将无法调用 LLM。${NC}"
+        echo -e "${YELLOW}  请填写: sudo nano /opt/fota-backend/.env${NC}"
     fi
 fi
 

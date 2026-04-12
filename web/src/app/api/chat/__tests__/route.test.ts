@@ -196,7 +196,7 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            const response = await POST(request)
+            await POST(request)
 
             expect(mockFetch).toHaveBeenCalled()
         })

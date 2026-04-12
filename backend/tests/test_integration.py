@@ -45,10 +45,9 @@ class TestIntegration:
         log_file = RawLogFile(
             file_id="int_file_001",
             case_id=case_id,
-            filename="test_integration.log",
+            original_filename="test_integration.log",
             source_type="android",
             file_size=2048,
-            file_path="/tmp/test_integration.log",
             storage_path=f"/var/fota/logs/{case_id}/test_integration.log",
             parse_status=ParseStatus.PENDING.value
         )
@@ -126,7 +125,7 @@ class TestIntegration:
                 "/api/cases",
                 json={
                     "case_id": f"concurrent_case_{i:03d}",
-                    "vin": f"CONC{i:016d}",
+                    "vin": f"CONC{i:013d}",
                     "vehicle_model": "Model Concurrent",
                     "issue_description": f"Concurrent test {i}"
                 }
@@ -159,7 +158,7 @@ class TestIntegration:
             }
         )
         
-        response_400 = client.post(
+        response_409 = client.post(
             "/api/cases",
             json={
                 "case_id": "duplicate_case",
@@ -168,4 +167,4 @@ class TestIntegration:
                 "issue_description": "Duplicate test 2"
             }
         )
-        assert response_400.status_code == 400
+        assert response_409.status_code == 409

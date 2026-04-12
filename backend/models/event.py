@@ -22,7 +22,7 @@ class DiagnosisEvent(Base):
     __tablename__ = 'diagnosis_events'
     
     # 主键
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     
     # 外键
     case_id = Column(String(100), ForeignKey('cases.case_id', ondelete='CASCADE'), nullable=False, index=True)

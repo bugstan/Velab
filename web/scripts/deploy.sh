@@ -78,8 +78,14 @@ if [ -f "$WEB_DIR/systemd/fota-web.service" ]; then
     cp $WEB_DIR/systemd/fota-web.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable fota-web
-    systemctl restart fota-web
-    echo -e "${GREEN}✓ front-end systemd 服务已挂载、自启并重启加载新版本${NC}"
+    systemctl restart fota-web || true
+    sleep 2
+    if systemctl is-active --quiet fota-web; then
+        echo -e "${GREEN}✓ front-end systemd 服务已挂载并正常运行${NC}"
+    else
+        echo -e "${YELLOW}⚠ systemd 服务已安装，但当前未在运行状态${NC}"
+        echo -e "${YELLOW}  排查命令: journalctl -u fota-web -n 30${NC}"
+    fi
 else
     echo -e "${RED}无法找到 web/systemd/fota-web.service 服务描述文件${NC}"
 fi

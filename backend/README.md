@@ -393,7 +393,7 @@ sudo tail -f /var/log/nginx/fota-backend-error.log
 
 ## 🔗 相关文档
 
-- [FOTA智能诊断平台_系统设计方案.md](../docs/FOTA智能诊断平台_系统设计方案.md) - 系统架构设计
+- [技术设计方案（修订版 v6）](../docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 系统架构设计（最终执行版）
 - [FOTA智能诊断平台_可行性方案（修订版v6）.md](../docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 可行性分析
 - [FOTA_LLM_API中转方案.md](../docs/FOTA_LLM_API中转方案.md) - LLM API 中转架构
 - [LLM_429限流防御方案.md](../docs/LLM_429限流防御方案.md) - 限流防御策略

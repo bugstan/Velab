@@ -76,6 +76,7 @@ export default function SourcePanel({ sources }: SourcePanelProps) {
 
       {selectedSource && !selectedSource.url && (
         <div
+          data-testid="modal-overlay"
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0, 0, 0, 0.7)" }}
           onClick={() => setSelectedSource(null)}

@@ -19,8 +19,10 @@ from models import Case, RawLogFile, DiagnosisEvent
 from models.log_file import ParseStatus
 
 
-# 测试数据库URL（使用内存SQLite）
-TEST_DATABASE_URL = "sqlite:///:memory:"
+# 测试数据库URL（优先从环境变量读取，默认为内存SQLite）
+import os
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+
 
 
 @pytest.fixture(scope="function")
@@ -30,12 +32,18 @@ def test_db() -> Generator[Session, None, None]:
     
     每个测试函数使用独立的内存数据库
     """
+    # 根据数据库类型配置 connect_args
+    connect_args = {}
+    if TEST_DATABASE_URL.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+        
     # 创建测试引擎
     engine = create_engine(
         TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False},
+        connect_args=connect_args,
         poolclass=StaticPool,
     )
+
     
     # 创建所有表
     Base.metadata.create_all(bind=engine)
@@ -95,13 +103,12 @@ def sample_log_file(test_db: Session, sample_case: Case) -> RawLogFile:
     log_file = RawLogFile(
         file_id="test_file_001",
         case_id=sample_case.case_id,
-        filename="test.log",
+        original_filename="test.log",
         source_type="android",
         file_size=1024,
-        file_path="/tmp/test.log",
         storage_path="/var/fota/logs/test_case_001/test.log",
         parse_status=ParseStatus.PENDING.value,
-        uploaded_at=datetime.utcnow()
+        upload_time=datetime.utcnow()
     )
     test_db.add(log_file)
     test_db.commit()
@@ -117,19 +124,18 @@ def sample_events(test_db: Session, sample_case: Case, sample_log_file: RawLogFi
     
     for i in range(5):
         event = DiagnosisEvent(
-            event_id=f"event_{i:03d}",
             case_id=sample_case.case_id,
             file_id=sample_log_file.file_id,
             source_type="android",
-            raw_ts=base_time.replace(second=i),
+            original_ts=base_time.replace(second=i),
             normalized_ts=base_time.replace(second=i),
-            event_type="log",
-            level="info",
+            event_type="LOG",
+            level="INFO",
             module="system",
             message=f"Test event {i}",
-            raw_line=f"Test line {i}",
-            line_number=i + 1,
-            metadata={"test": True}
+            raw_snippet=f"Test line {i}",
+            raw_line_number=i + 1,
+            parsed_fields={"test": True}
         )
         events.append(event)
         test_db.add(event)
@@ -141,7 +147,7 @@ def sample_events(test_db: Session, sample_case: Case, sample_log_file: RawLogFi
     return events
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_task_client(monkeypatch):
     """Mock任务客户端（避免依赖Redis）"""
     class MockTaskClient:
@@ -173,4 +179,6 @@ def mock_task_client(monkeypatch):
     
     # Mock任务客户端
     from tasks import client as task_client_module
+    from api import parse as api_parse_module
     monkeypatch.setattr(task_client_module, "get_task_client", mock_get_task_client)
+    monkeypatch.setattr(api_parse_module, "get_task_client", mock_get_task_client)
