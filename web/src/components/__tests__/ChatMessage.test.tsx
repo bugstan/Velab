@@ -255,4 +255,52 @@ describe('ChatMessage Component', () => {
             expect(container).toBeInTheDocument()
         })
     })
-})
+
+    describe('复杂 Markdown 渲染器', () => {
+        it('应该渲染所有支持的 Markdown 语法', () => {
+            const complexContent = `
+## 标题 2
+### 标题 3
+---
+**粗体文本** 和 \`行内代码\`
+[链接文字](https://example.com)
+
+- 无序列表项 1
+- 无序列表项 2
+
+1. 有序列表项 1
+2. 有序列表项 2
+
+| 表头 1 | 表头 2 |
+| 内容 1 | 内容 2 |
+
+\`\`\`
+代码块内容
+\`\`\`
+
+置信度：高
+置信度：中
+置信度：低
+
+<<<THINKING>>>
+内部思考过程
+<<</THINKING>>>
+            `;
+            const message = { ...mockAssistantMessage, content: complexContent.trim() };
+            render(<ChatMessageComponent message={message} />);
+
+            expect(screen.getByText('标题 2')).toBeInTheDocument();
+            expect(screen.getByText('标题 3')).toBeInTheDocument();
+            expect(screen.getByText('粗体文本')).toBeInTheDocument();
+            expect(screen.getByText('链接文字')).toHaveAttribute('href', 'https://example.com');
+            expect(screen.getByText('无序列表项 1')).toBeInTheDocument();
+            expect(screen.getByText('有序列表项 1')).toBeInTheDocument();
+            expect(screen.getByText('表头 1')).toBeInTheDocument();
+            expect(screen.getByText('代码块内容')).toBeInTheDocument();
+            expect(screen.getByText('思考过程').closest('details')).toBeInTheDocument();
+            expect(screen.getByText('高')).toBeInTheDocument();
+            expect(screen.getByText('中')).toBeInTheDocument();
+            expect(screen.getByText('低')).toBeInTheDocument();
+        });
+    });
+});

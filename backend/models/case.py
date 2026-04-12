@@ -28,7 +28,8 @@ class Case(Base):
     case_id = Column(String(100), unique=True, nullable=False, index=True)
     vin = Column(String(17), index=True)
     vehicle_model = Column(String(100))
-    status = Column(String(50))
+    issue_description = Column(String(500))
+    status = Column(String(50), default="active")
     
     # 时间戳
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

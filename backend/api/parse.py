@@ -176,18 +176,27 @@ def align_case_time(
         )
         parsed_events.append(parsed_event)
     
+    # 按source_type分组
+    events_by_source = {}
+    for p_event in parsed_events:
+        source = p_event.source_type
+        if source not in events_by_source:
+            events_by_source[source] = []
+        events_by_source[source].append(p_event.to_dict())
+    
     # 执行时间对齐
-    alignment_result = time_alignment.align_events(parsed_events)
+    alignment_result = time_alignment.align_events(events_by_source)
     
     # 更新数据库中的normalized_ts和clock_confidence
     for i, event in enumerate(events):
-        normalized_ts = alignment_result.get_normalized_timestamp(
+        res = alignment_result.get_normalized_timestamp(
             parsed_events[i].source_type,
             parsed_events[i].original_ts
         )
-        if normalized_ts:
-            event.normalized_ts = normalized_ts.normalized_ts
-            event.clock_confidence = normalized_ts.confidence
+        if res:
+            normalized_ts, confidence = res
+            event.normalized_ts = normalized_ts
+            event.clock_confidence = confidence
     
     db.commit()
     

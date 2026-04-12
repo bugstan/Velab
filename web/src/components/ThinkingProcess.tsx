@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AgentStep, WorkspaceUpdate } from "@/lib/types";
 
 interface ThinkingProcessProps {
@@ -171,6 +171,11 @@ export default function ThinkingProcess({
   defaultExpanded = false,
 }: ThinkingProcessProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  // Sync internal state if the prop changes (e.g. from streaming completion)
+  useEffect(() => {
+    setIsExpanded(defaultExpanded);
+  }, [defaultExpanded]);
 
   const allCompleted = steps.every((s) => s.status === "completed");
   const currentStep = steps.find((s) => s.status === "running");

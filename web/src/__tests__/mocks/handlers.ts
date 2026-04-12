@@ -82,6 +82,15 @@ export const handlers = [
         return createSSEResponse(events)
     }),
 
+    // 聊天 API (前端路由)
+    http.post('/api/chat', async () => {
+        const events = [
+            { type: 'content_delta', content: 'Mock response from MSW' },
+            { type: 'done' }
+        ]
+        return createSSEResponse(events)
+    }),
+
     // 健康检查
     http.get(`${BACKEND_URL}/health`, () => {
         return HttpResponse.json({ status: 'ok' })

@@ -52,8 +52,9 @@ def create_case(
         case_id=case_data.case_id,
         vin=case_data.vin,
         vehicle_model=case_data.vehicle_model,
-        status="created",
-        metadata=case_data.metadata
+        issue_description=case_data.issue_description,
+        status="active",
+        meta_data=case_data.metadata
     )
     
     db.add(case)

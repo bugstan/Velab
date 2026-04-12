@@ -45,6 +45,7 @@ class CaseCreate(BaseModel):
     case_id: str = Field(..., description="案例ID", max_length=100)
     vin: Optional[str] = Field(None, description="车辆VIN码", max_length=17)
     vehicle_model: Optional[str] = Field(None, description="车型", max_length=100)
+    issue_description: Optional[str] = Field(None, description="问题描述")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="元数据")
 
 
@@ -54,10 +55,11 @@ class CaseResponse(BaseModel):
     case_id: str
     vin: Optional[str]
     vehicle_model: Optional[str]
+    issue_description: Optional[str]
     status: str
     created_at: datetime
     updated_at: datetime
-    metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="meta_data")
+    metadata: Dict[str, Any] = Field(default_factory=dict, alias="meta_data")
 
     
     class Config:
