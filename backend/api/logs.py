@@ -4,7 +4,6 @@
 提供日志文件上传和管理接口
 """
 
-import os
 import hashlib
 from datetime import datetime
 from typing import Optional
@@ -50,13 +49,21 @@ def _generate_file_id(case_id: str, filename: str, content: bytes) -> str:
     return f"{case_id}_{timestamp}_{content_hash[:8]}"
 
 
-def _save_file(file_id: str, case_id: str, content: bytes) -> str:
+def _sanitize_filename(filename: str) -> str:
+    """清洗文件名，避免路径穿越并保留可读扩展名。"""
+    name = Path(filename or "upload.bin").name
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in name)
+    return safe or "upload.bin"
+
+
+def _save_file(file_id: str, case_id: str, original_filename: str, content: bytes) -> str:
     """
     保存文件到存储目录
     
     Args:
         file_id: 文件ID
         case_id: 案例ID
+        original_filename: 原始文件名
         content: 文件内容
         
     Returns:
@@ -66,8 +73,9 @@ def _save_file(file_id: str, case_id: str, content: bytes) -> str:
     case_dir = STORAGE_ROOT / case_id
     case_dir.mkdir(parents=True, exist_ok=True)
     
-    # 保存文件
-    file_path = case_dir / file_id
+    # 保存文件（保留原始文件名，方便后端读取与人工排查）
+    safe_name = _sanitize_filename(original_filename)
+    file_path = case_dir / f"{file_id}_{safe_name}"
     file_path.write_bytes(content)
     
     return str(file_path)
@@ -85,7 +93,7 @@ async def upload_log_file(
     
     Args:
         case_id: 案例ID
-        source_type: 日志源类型(android/kernel/fota/dlt/mcu/ibdu/vehicle_signal)
+        source_type: 日志源类型(android/fota_hmi/dlt/mcu/ibdu)
         file: 上传的文件
         db: 数据库会话
         
@@ -104,7 +112,7 @@ async def upload_log_file(
         )
     
     # 验证日志源类型
-    valid_types = ["android", "kernel", "fota", "dlt", "mcu", "ibdu", "vehicle_signal"]
+    valid_types = ["android", "fota_hmi", "dlt", "mcu", "ibdu"]
     if source_type not in valid_types:
         raise HTTPException(
             status_code=400,
@@ -130,7 +138,7 @@ async def upload_log_file(
     file_id = _generate_file_id(case_id, file.filename, content)
     
     # 保存文件
-    storage_path = _save_file(file_id, case_id, content)
+    storage_path = _save_file(file_id, case_id, file.filename, content)
     
     # 创建数据库记录
     log_file = RawLogFile(
@@ -155,7 +163,7 @@ async def upload_log_file(
         source_type=log_file.source_type,
         storage_path=log_file.storage_path,
         parse_status=log_file.parse_status,
-        uploaded_at=log_file.uploaded_at
+        uploaded_at=log_file.upload_time
     )
 
 
@@ -224,7 +232,7 @@ def list_log_files(
     total = query.count()
     
     # 分页查询
-    files = query.order_by(RawLogFile.uploaded_at.desc()).offset(offset).limit(limit).all()
+    files = query.order_by(RawLogFile.upload_time.desc()).offset(offset).limit(limit).all()
     
     return LogFileListResponse(total=total, items=files)
 

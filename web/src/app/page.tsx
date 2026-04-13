@@ -1,23 +1,3 @@
-/**
- * FOTA 诊断平台 — 主页面组件
- *
- * 这是应用的核心页面，实现了完整的诊断对话流程：
- * 1. 场景选择：支持多种诊断场景切换
- * 2. 消息管理：维护用户和助手的对话历史
- * 3. SSE 流式处理：实时接收和展示诊断过程
- * 4. 状态管理：处理加载、流式输出、错误等状态
- *
- * 主要功能：
- * - 实时流式显示 Agent 执行过程（Thinking Process）
- * - 支持中断正在进行的诊断
- * - 自动滚动到最新消息
- * - 场景切换时清空对话历史
- *
- * @author FOTA 诊断平台团队
- * @created 2025
- * @updated 2025
- */
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -25,20 +5,11 @@ import Header from "@/components/Header";
 import WelcomePage from "@/components/WelcomePage";
 import InputBar from "@/components/InputBar";
 import ChatMessageComponent from "@/components/ChatMessage";
-import {
-  DemoScenario,
-  DEMO_SCENARIOS,
-  ChatMessage,
-  AgentStep,
-} from "@/lib/types";
+import LogUploadPanel from "@/components/LogUploadPanel";
+import UploadedCaseSidebar from "@/components/UploadedCaseSidebar";
+import { DemoScenario, DEMO_SCENARIOS, ChatMessage, AgentStep } from "@/lib/types";
 import { parseSSEBuffer } from "@/lib/sseParse";
 
-
-/**
- * SSE 事件载荷类型定义
- *
- * 定义了后端通过 SSE 推送的各种事件类型
- */
 type SsePayload = {
   type: string;
   step?: AgentStep;
@@ -47,23 +18,17 @@ type SsePayload = {
   content?: string;
   sources?: ChatMessage["sources"];
   confidenceLevel?: ChatMessage["confidenceLevel"];
-  // workspace_update fields
   file?: "notes.md" | "todo.md" | "focus.md";
   agent?: string;
   change?: string;
 };
 
-/**
- * 主页面组件
- *
- * 管理整个诊断对话的状态和交互逻辑
- */
 export default function Home() {
-  const [currentScenario, setCurrentScenario] = useState<DemoScenario>(
-    DEMO_SCENARIOS[0]
-  );
+  const [currentScenario, setCurrentScenario] = useState<DemoScenario>(DEMO_SCENARIOS[0]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [selectedCaseId, setSelectedCaseId] = useState("");
+  const [uploadRefreshSignal, setUploadRefreshSignal] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -89,9 +54,7 @@ export default function Home() {
       abortControllerRef.current.abort();
     }
     setIsRunning(false);
-    setMessages((prev) =>
-      prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
-    );
+    setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
   };
 
   const handleSend = async (message: string) => {
@@ -117,10 +80,7 @@ export default function Home() {
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setIsRunning(true);
 
-    const historyPayload = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const historyPayload = messages.map((m) => ({ role: m.role, content: m.content }));
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -152,9 +112,7 @@ export default function Home() {
                     thinking: {
                       ...m.thinking!,
                       steps: m.thinking!.steps.map((s) =>
-                        s.stepNumber === data.stepNumber
-                          ? { ...s, result: data.partialResult }
-                          : s
+                        s.stepNumber === data.stepNumber ? { ...s, result: data.partialResult } : s
                       ),
                     },
                   }
@@ -172,9 +130,7 @@ export default function Home() {
                     thinking: {
                       ...m.thinking!,
                       steps: m.thinking!.steps.map((s) =>
-                        s.stepNumber === data.step?.stepNumber
-                          ? (data.step as AgentStep)
-                          : s
+                        s.stepNumber === data.step?.stepNumber ? (data.step as AgentStep) : s
                       ),
                     },
                   }
@@ -188,10 +144,7 @@ export default function Home() {
             prev.map((m) => {
               if (m.id !== assistantId) return m;
               const chunk = data.content ?? "";
-              const next =
-                m.content === ""
-                  ? chunk.replace(/^\n+/, "")
-                  : m.content + chunk;
+              const next = m.content === "" ? chunk.replace(/^\n+/, "") : m.content + chunk;
               return { ...m, content: next };
             })
           );
@@ -218,7 +171,6 @@ export default function Home() {
           break;
 
         case "workspace_update": {
-          // Accumulate workspace updates onto the matching agent step
           const wsUpdate = {
             file: data.file ?? "notes.md",
             agent: data.agent ?? "",
@@ -307,29 +259,36 @@ export default function Home() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "var(--bg-primary)" }}>
-      <Header
-        currentScenario={currentScenario}
-        onScenarioChange={handleScenarioChange}
-      />
+      <Header currentScenario={currentScenario} onScenarioChange={handleScenarioChange} />
 
-      <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        {!hasMessages ? (
-          <WelcomePage onQuestionClick={handleSend} />
-        ) : (
-          <div style={{ maxWidth: "48rem", margin: "0 auto", padding: "24px 16px", width: "100%" }}>
-            {messages.map((msg) => (
-              <ChatMessageComponent key={msg.id} message={msg} />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
+      <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <UploadedCaseSidebar
+          selectedCaseId={selectedCaseId}
+          onSelectCase={setSelectedCaseId}
+          refreshSignal={uploadRefreshSignal}
+        />
+
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+          <LogUploadPanel
+            caseId={selectedCaseId}
+            onCaseIdChange={setSelectedCaseId}
+            onUploadSuccess={() => setUploadRefreshSignal((v) => v + 1)}
+          />
+
+          {!hasMessages ? (
+            <WelcomePage onQuestionClick={handleSend} />
+          ) : (
+            <div style={{ maxWidth: "48rem", margin: "0 auto", padding: "24px 16px", width: "100%" }}>
+              {messages.map((msg) => (
+                <ChatMessageComponent key={msg.id} message={msg} />
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
       </main>
 
-      <InputBar
-        onSend={handleSend}
-        isRunning={isRunning}
-        onStop={handleStop}
-      />
+      <InputBar onSend={handleSend} isRunning={isRunning} onStop={handleStop} />
     </div>
   );
 }

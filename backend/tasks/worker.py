@@ -7,6 +7,7 @@ Arq Worker 配置和任务定义
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 
 from arq import cron
 from arq.connections import RedisSettings
@@ -15,9 +16,8 @@ from config import settings
 from database import db_manager
 from db_operations import BatchOperations
 from models.log_file import ParseStatus
-from services.event_normalizer import EventNormalizer
 from services.parser import parser_registry
-from services.time_alignment import TimeAlignmentService
+from services.time_alignment import TimeAlignmentService, LogEntry
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +80,11 @@ async def parse_logs_task(
                         continue
                     
                     # 解析日志文件
+                    time_window = (time_start, time_end) if (time_start and time_end) else None
                     events = list(parser.parse_file(
-                        file_path=log_file.file_path,
-                        case_id=case_id,
-                        time_window_start=time_start,
-                        time_window_end=time_end,
-                        max_lines=max_lines_per_file
+                        file_path=Path(log_file.file_path),
+                        time_window=time_window,
+                        max_lines=max_lines_per_file,
                     ))
                     
                     if not events:
@@ -93,29 +92,28 @@ async def parse_logs_task(
                         BatchOperations.update_file_parse_status(db, file_id, ParseStatus.PARSED)
                         continue
                     
-                    # 标准化事件
-                    normalizer = EventNormalizer()
-                    normalized_events = [normalizer.normalize(event) for event in events]
-                    
-                    # 转换为字典格式
-                    event_dicts = [
-                        {
-                            "event_id": event.event_id,
-                            "case_id": event.case_id,
-                            "file_id": event.file_id,
-                            "source_type": event.source_type,
-                            "raw_ts": event.raw_ts,
-                            "normalized_ts": event.normalized_ts,
-                            "event_type": event.event_type,
-                            "level": event.level,
-                            "module": event.module,
-                            "message": event.message,
-                            "raw_line": event.raw_line,
-                            "line_number": event.line_number,
-                            "metadata": event.metadata,
-                        }
-                        for event in normalized_events
-                    ]
+                    # 转换为数据库字段
+                    event_dicts = []
+                    for event in events:
+                        event_dicts.append(
+                            {
+                                "case_id": case_id,
+                                "file_id": file_id,
+                                "source_type": event.source_type,
+                                "original_ts": event.original_ts,
+                                "normalized_ts": event.original_ts,
+                                "clock_confidence": 1.0,
+                                "event_type": event.event_type.value,
+                                "module": event.module,
+                                "level": event.level.value,
+                                "message": event.message,
+                                "raw_line_number": event.raw_line_number,
+                                "raw_snippet": event.raw_snippet,
+                                "parsed_fields": event.parsed_fields,
+                                "parser_name": event.parser_name,
+                                "parser_version": event.parser_version,
+                            }
+                        )
                     
                     # 批量插入事件
                     inserted_count = BatchOperations.bulk_insert_events(db, event_dicts)
@@ -143,43 +141,40 @@ async def parse_logs_task(
                     all_events = events_query.all()
                     
                     if all_events:
-                        # 转换为 ParsedEvent 对象
-                        from services.parser.base import ParsedEvent, EventLevel, EventType
-                        parsed_events = [
-                            ParsedEvent(
-                                event_id=e.event_id,
-                                case_id=e.case_id,
-                                file_id=e.file_id,
-                                source_type=e.source_type,
-                                raw_ts=e.raw_ts,
-                                normalized_ts=e.normalized_ts,
-                                event_type=EventType(e.event_type),
-                                level=EventLevel(e.level),
-                                module=e.module,
-                                message=e.message,
-                                raw_line=e.raw_line,
-                                line_number=e.line_number,
-                                metadata=e.metadata or {}
-                            )
-                            for e in all_events
-                        ]
-                        
-                        # 执行时间对齐
-                        alignment_result = alignment_service.align_events(parsed_events)
-                        
-                        # 批量更新对齐后的时间戳
-                        updates = [
-                            {
-                                "event_id": event.event_id,
-                                "normalized_ts": alignment_result.get_normalized_timestamp(
-                                    event.source_type,
-                                    event.raw_ts
+                        events_by_source: dict[str, list[LogEntry]] = {}
+                        for e in all_events:
+                            events_by_source.setdefault(e.source_type, []).append(
+                                LogEntry(
+                                    source=e.source_type,
+                                    message=e.message or "",
+                                    wall_time=e.original_ts,
+                                    raw_time=e.original_ts.isoformat() if e.original_ts else "",
                                 )
-                            }
-                            for event in parsed_events
-                        ]
-                        
-                        BatchOperations.bulk_update_event_timestamps(db, updates)
+                            )
+
+                        # 执行时间对齐
+                        alignment_result = alignment_service.align_events(events_by_source)
+
+                        # 批量更新对齐后的时间戳与置信度
+                        updates = []
+                        for e in all_events:
+                            if e.original_ts is None:
+                                continue
+                            normalized_ts, confidence = alignment_result.get_normalized_timestamp(
+                                e.source_type,
+                                e.original_ts,
+                            )
+                            updates.append(
+                                {
+                                    "id": e.id,
+                                    "normalized_ts": normalized_ts,
+                                    "clock_confidence": confidence,
+                                }
+                            )
+
+                        if updates:
+                            db.bulk_update_mappings(db_manager.models["DiagnosisEvent"], updates)
+                            db.commit()
                         logger.info(f"时间对齐完成 - Case: {case_id}, 状态: {alignment_result.status}")
                         
                 except Exception as e:

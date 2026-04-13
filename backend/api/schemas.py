@@ -24,12 +24,10 @@ class ParseStatus(str, Enum):
 class SourceType(str, Enum):
     """日志源类型"""
     ANDROID = "android"
-    KERNEL = "kernel"
-    FOTA = "fota"
+    FOTA_HMI = "fota_hmi"
     DLT = "dlt"
     MCU = "mcu"
     IBDU = "ibdu"
-    VEHICLE_SIGNAL = "vehicle_signal"
 
 
 class ExportFormat(str, Enum):
@@ -96,9 +94,9 @@ class LogFileResponse(BaseModel):
     source_type: str
     storage_path: str
     parse_status: str
-    error_message: Optional[str]
-    uploaded_at: datetime
-    updated_at: datetime
+    error_message: Optional[str] = Field(default=None, validation_alias="parse_error")
+    uploaded_at: datetime = Field(validation_alias="upload_time")
+    updated_at: datetime = Field(validation_alias="created_at")
     metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias="meta_data")
     
     class Config:

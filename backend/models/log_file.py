@@ -41,7 +41,7 @@ class RawLogFile(Base):
     original_filename = Column(String(500), nullable=False)
     file_size = Column(BigInteger, nullable=False)
     mime_type = Column(String(100))
-    source_type = Column(String(32), nullable=False, index=True)  # android/kernel/fota/dlt/mcu/ibdu/vehicle_signal
+    source_type = Column(String(32), nullable=False, index=True)  # android/fota_hmi/dlt/mcu/ibdu
     storage_path = Column(Text, nullable=False)  # MinIO对象存储路径
     
     # 上传时间

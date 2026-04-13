@@ -117,7 +117,7 @@ class TestDatabaseModels(unittest.TestCase):
                 file_id='FILE002',
                 original_filename='fota.log',
                 file_size=2048000,
-                source_type='fota',
+                source_type='fota_hmi',
                 storage_path='/minio/logs/fota.log'
             )
             session.add(log_file)
@@ -127,7 +127,7 @@ class TestDatabaseModels(unittest.TestCase):
             event = DiagnosisEvent(
                 case_id='TEST003',
                 file_id='FILE002',
-                source_type='fota',
+                source_type='fota_hmi',
                 original_ts=datetime.utcnow(),
                 normalized_ts=datetime.utcnow(),
                 event_type='FOTA_STAGE',

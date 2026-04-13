@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS cases (
     case_id VARCHAR(100) UNIQUE NOT NULL,
     vin VARCHAR(17),
     vehicle_model VARCHAR(100),
+    issue_description VARCHAR(500),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(50),

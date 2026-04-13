@@ -48,6 +48,16 @@ export interface PresetQuestion {
   icon: string;
 }
 
+export type LogSourceType = "android" | "fota_hmi" | "dlt" | "mcu" | "ibdu";
+
+export const LOG_SOURCE_TYPES: Array<{ value: LogSourceType; label: string }> = [
+  { value: "android", label: "Android Logcat" },
+  { value: "fota_hmi", label: "FOTA HMI" },
+  { value: "dlt", label: "DLT / T-Box" },
+  { value: "mcu", label: "MCU" },
+  { value: "ibdu", label: "iBDU" },
+];
+
 export const DEMO_SCENARIOS: DemoScenario[] = [
   {
     id: "fota-diagnostic",
