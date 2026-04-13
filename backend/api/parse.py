@@ -18,7 +18,7 @@ from api.schemas import (
     ParseTaskResponse,
     SuccessResponse
 )
-from services.time_alignment import TimeAlignmentService
+from services.time_alignment import TimeAlignmentService, LogEntry
 from tasks.client import get_task_client
 
 router = APIRouter()
@@ -176,13 +176,18 @@ def align_case_time(
         )
         parsed_events.append(parsed_event)
     
-    # 按source_type分组
-    events_by_source = {}
+    # 按source_type分组（转换为 LogEntry 供 TimeAlignmentService 使用）
+    events_by_source: dict[str, list[LogEntry]] = {}
     for p_event in parsed_events:
         source = p_event.source_type
         if source not in events_by_source:
             events_by_source[source] = []
-        events_by_source[source].append(p_event.to_dict())
+        events_by_source[source].append(LogEntry(
+            source=source,
+            message=p_event.message or "",
+            wall_time=p_event.original_ts,
+            raw_time=p_event.original_ts.isoformat() if p_event.original_ts else "",
+        ))
     
     # 执行时间对齐
     alignment_result = time_alignment.align_events(events_by_source)
