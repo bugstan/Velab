@@ -494,8 +494,11 @@ async def orchestrate(
                 },
             }
 
-        # Step N: RCA Synthesizer (if we have multiple agent results)
-        if len(agent_results) > 0:
+        # Step N: RCA Synthesizer (only if at least one agent succeeded)
+        has_success = any(r.success for r in agent_results)
+        ran_synthesizer = False
+        rca_result: AgentResult | None = None
+        if has_success:
             synthesizer_step_num = 2 + len(tool_calls)
             synthesizer = registry.get("rca_synthesizer")
             
@@ -516,14 +519,14 @@ async def orchestrate(
                     if workspace_path:
                         rca_context["workspace_path"] = workspace_path
                     
-                    synthesizer_result = await synthesizer.execute(
+                    rca_result = await synthesizer.execute(
                         task=user_message,
                         keywords=None,
                         context=rca_context,
                     )
                     
-                    # Add synthesizer result to agent_results
-                    agent_results.append(synthesizer_result)
+                    # RCA result 不再 append 到 agent_results — 职责分离
+                    ran_synthesizer = True
                     
                     yield {
                         "type": "step_complete",
@@ -532,7 +535,7 @@ async def orchestrate(
                             "agentName": synthesizer.display_name,
                             "status": "completed",
                             "statusText": "Synthesizing Root Cause Analysis...",
-                            "result": synthesizer_result.detail if synthesizer_result.detail else synthesizer_result.summary,
+                            "result": rca_result.summary,
                         },
                     }
                 except Exception as e:
@@ -548,58 +551,71 @@ async def orchestrate(
                         },
                     }
 
-    # Final step: Response Generator
-    final_step_num = 2 + len(tool_calls) + (1 if len(agent_results) > 0 and registry.get("rca_synthesizer") else 0) if tool_calls else 2
-    yield {
-        "type": "step_start",
-        "step": {
-            "stepNumber": final_step_num,
-            "agentName": "Agent Interface",
-            "status": "running",
-            "statusText": "Generating the Final Response...",
-        },
-    }
+    # Final step: Response Generator (流式输出 RCA 结果，不再单独调 LLM)
+    final_step_num = 2 + len(tool_calls) + (1 if ran_synthesizer else 0)
+    try:
+        yield {
+            "type": "step_start",
+            "step": {
+                "stepNumber": final_step_num,
+                "agentName": "Agent Interface",
+                "status": "running",
+                "statusText": "Generating the Final Response...",
+            },
+        }
 
-    # Generate structured response
-    yield {
-        "type": "step_complete",
-        "step": {
-            "stepNumber": final_step_num,
-            "agentName": "Agent Interface",
-            "status": "completed",
-            "statusText": "Generating the Final Response...",
-        },
-    }
+        yield {
+            "type": "step_complete",
+            "step": {
+                "stepNumber": final_step_num,
+                "agentName": "Agent Interface",
+                "status": "completed",
+                "statusText": "Generating the Final Response...",
+            },
+        }
 
-    # Stream the final response
-    yield {"type": "content_start"}
+        # Stream the final response
+        yield {"type": "content_start"}
 
-    all_sources = []
-    for ar in agent_results:
-        all_sources.extend(ar.sources)
+        # 收集所有引用来源（来自原始 Agent，不含 RCA 自身的 sources 避免重复）
+        all_sources = []
+        for ar in agent_results:
+            all_sources.extend(ar.sources)
 
-    chain_debug(
-        log,
-        step="orchestrate.final_response",
-        event="STREAM_BEGIN",
-        agent_results=len(agent_results),
-    )
-    async with async_step_timer(log, step="orchestrate.final_response", msg="generate_final_response"):
-        async for chunk in generate_final_response(user_message, agent_results):
-            yield chunk
+        chain_debug(
+            log,
+            step="orchestrate.final_response",
+            event="STREAM_BEGIN",
+            agent_results=len(agent_results),
+            has_rca=rca_result is not None,
+        )
 
-    confidence = "高" if any(r.confidence == "high" for r in agent_results) else "中" if agent_results else "低"
-    yield {
-        "type": "content_complete",
-        "sources": all_sources,
-        "confidenceLevel": confidence,
-    }
-    yield {"type": "done"}
+        # 优先使用 RCA Synthesizer 的 LLM 推理结果直接输出
+        if rca_result and rca_result.success and rca_result.detail:
+            async for chunk in _stream_rca_result(rca_result):
+                yield chunk
+        else:
+            # 降级：RCA 失败或未执行时，用原始 Agent 结果调 LLM
+            async with async_step_timer(log, step="orchestrate.final_response", msg="generate_final_response"):
+                async for chunk in generate_final_response(user_message, agent_results):
+                    yield chunk
 
-    # Cleanup workspace
-    if ws_ctx:
-        workspace_manager.cleanup(task_id, archive=False)
-        chain_debug(log, step="orchestrate.workspace", event="CLEANED", task_id=task_id)
+        confidence = "高" if any(r.confidence == "high" for r in agent_results) else "中" if agent_results else "低"
+        # 如果 RCA 成功，用 RCA 的置信度覆盖
+        if rca_result and rca_result.success:
+            conf_map = {"high": "高", "medium": "中", "low": "低"}
+            confidence = conf_map.get(rca_result.confidence, confidence)
+        yield {
+            "type": "content_complete",
+            "sources": all_sources,
+            "confidenceLevel": confidence,
+        }
+        yield {"type": "done"}
+    finally:
+        # Workspace 清理放在 finally 块中，确保即使 generator 异常退出也能执行
+        if ws_ctx:
+            workspace_manager.cleanup(task_id, archive=False)
+            chain_debug(log, step="orchestrate.workspace", event="CLEANED", task_id=task_id)
 
     chain_debug(
         log,
@@ -610,11 +626,31 @@ async def orchestrate(
     )
 
 
+async def _stream_rca_result(rca_result: AgentResult) -> AsyncIterator[dict]:
+    """将 RCA Synthesizer 的 LLM 结果逐行流式输出。
+
+    RCA 的 detail 已由 synthesizer-model 生成完整 Markdown，
+    此处仅负责拆行推送 SSE content_delta 事件，模拟打字效果。
+    """
+    content = rca_result.detail
+    lines = content.split('\n')
+    for line in lines:
+        if line.strip():
+            yield {"type": "content_delta", "content": line + '\n'}
+            await asyncio.sleep(0.01)
+        else:
+            yield {"type": "content_delta", "content": '\n'}
+
+
 async def generate_final_response(
     user_message: str,
     agent_results: list[AgentResult],
 ) -> AsyncIterator[dict]:
-    """Generate the final structured response using LLM or templates."""
+    """降级 Response Generator — 仅在 RCA Synthesizer 失败或未执行时使用。
+
+    正常流程中 RCA Synthesizer 通过 synthesizer-model (LLM) 直接生成最终报告，
+    本函数仅作为 fallback：用 agent-model 对原始 Agent 结果做综合回复。
+    """
     chain_debug(
         log,
         step="response_generator",
@@ -673,15 +709,14 @@ async def generate_final_response(
         for line in lines:
             if line.strip():  # Only send non-empty lines
                 yield {"type": "content_delta", "content": line + '\n'}
-                import asyncio as _aio
-                await _aio.sleep(0.01)
+                await asyncio.sleep(0.01)
             else:
                 # Send empty lines to preserve paragraph breaks
                 yield {"type": "content_delta", "content": '\n'}
 
 
 RESPONSE_GENERATOR_PROMPT = """你是一个车辆 FOTA 诊断助手（角色: Technician）。
-根据各诊断 Agent 的分析结果，生成结构化的最终回复。
+注意：你正在降级模式下工作（RCA Synthesizer 不可用），需直接根据各诊断 Agent 的原始分析结果生成结构化回复。
 
 回复必须严格按照以下格式：
 
@@ -728,6 +763,8 @@ def _get_agent_status_text(agent_name: str) -> str:
     status_map = {
         "log_analytics": "Reading the logs and analyzing...",
         "jira_knowledge": "Retrieved existing relevant Jira tickets and documents...",
+        "doc_retrieval": "Searching technical documentation...",
+        "rca_synthesizer": "Synthesizing Root Cause Analysis...",
         "vehicle_timing": "Analyzing vehicle timing messages...",
         "mobile_app_logs": "Parsing mobile app logs...",
     }

@@ -1,4 +1,13 @@
-"""RCA Synthesizer Agent — synthesizes root cause analysis from multiple agent results."""
+"""RCA Synthesizer Agent — 使用 LLM 进行多源证据交叉关联与根因推理。
+
+职责：
+  - 接收各诊断 Agent（日志/Jira/文档）的原始结果
+  - 使用 synthesizer-model 做深度根因分析（交叉关联 + 因果链推理）
+  - 输出结构化 Markdown 报告，作为最终用户可见内容
+  - LLM 不可用时降级为模板拼接
+
+下游 Response Generator 不再单独调用 LLM，仅负责流式输出本 Agent 的结果。
+"""
 
 from __future__ import annotations
 
@@ -6,43 +15,104 @@ import logging
 from typing import List
 
 from agents.base import BaseAgent, AgentResult, registry
-from common.chain_log import sync_step_timer
+from common.chain_log import sync_step_timer, chain_debug
+from services.llm import chat_completion_stream
 
 log = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────
+# RCA Synthesizer Prompt — 交叉关联 + 根因推理
+# ────────────────────────────────────────────────────────────────────
+
+RCA_SYSTEM_PROMPT = """\
+你是一名资深车辆 FOTA（空中固件升级）诊断专家。
+
+你将收到多个诊断 Agent 的分析结果（日志分析、历史工单、技术文档等），\
+需要进行 **跨源证据交叉关联** 和 **因果链推理**，输出最终的结构化根因分析报告。
+
+## 你的推理要求
+
+1. **交叉关联**：将日志时间线、Jira 历史案例、技术文档规范相互印证，找出一致性证据和矛盾点
+2. **因果链**：从现象出发，沿时间线和调用链推导出根因，标注每一步的证据强度
+3. **置信度评估**：基于证据充分性给出整体置信度（高/中/低），并说明依据
+4. **可操作建议**：给出具体的、可直接执行的修复步骤，不要泛泛而谈
+
+## 输出格式（严格遵守）
+
+## 信息分析
+
+主要来源：[列出实际使用的数据来源名称]
+置信度：[高/中/低] — [一句话说明置信度依据]
+
+---
+
+## 技术解答
+
+### 关键发现
+
+[核心根因结论，1-2 句话，明确指出故障原因]
+
+### 因果链分析
+
+[详细的时间线 + 因果推导，包含：
+- 各 Agent 证据的交叉关联
+- 具体时间戳、错误码、状态转换
+- 矛盾证据的处理说明]
+
+---
+
+## ⚠️ 安全提示
+
+[与车辆安全相关的注意事项；如无安全风险可写"当前故障不涉及行车安全"]
+
+---
+
+## 建议措施
+
+[编号列表，包含具体可执行的修复/处理步骤]
+
+---
+
+## 规则
+- 用中文回复
+- 保留所有技术术语（ECU 名称、函数名、错误码等）用英文
+- **必须引用**各 Agent 提供的具体数据（时间戳、字节数、状态码等），不要编造未提供的数据
+- 如果 Agent 结果之间存在矛盾，明确指出并给出你的判断依据
+- 如果某个 Agent 未找到信息（置信度低），坦诚说明该维度证据不足
+- 如果整体证据不足以确定根因，给出最可能的假设和需要补充的信息"""
 
 
 class RCASynthesizerAgent(BaseAgent):
     name = "rca_synthesizer"
     display_name = "RCA Synthesizer"
     description = (
-        "综合多个Agent的分析结果，生成最终的根因分析报告。"
-        "汇总日志分析、历史案例、技术文档等多路证据，计算置信度，给出诊断结论和修复建议。"
+        "综合多个Agent的分析结果，使用LLM进行跨源证据交叉关联与根因推理，"
+        "生成结构化的最终诊断报告。"
     )
 
     async def execute(
-        self, 
-        task: str, 
-        keywords: list[str] | None = None, 
-        context: dict | None = None
+        self,
+        task: str,
+        keywords: list[str] | None = None,
+        context: dict | None = None,
     ) -> AgentResult:
         """
-        Synthesize RCA from multiple agent results.
-        
-        Args:
-            task: User's diagnostic query
-            keywords: Extracted keywords
-            context: Should contain 'agent_results' - list of AgentResult from other agents
+        使用 LLM 综合多路 Agent 的原始结果，输出根因分析报告。
+
+        context 应包含：
+          - agent_results: list[AgentResult]
+          - workspace_path: str (可选)
         """
         with sync_step_timer(
             log,
             step="agent.rca_synthesizer",
             task_preview=task[:120],
         ):
-            # Extract agent results from context
             agent_results: List[AgentResult] = []
             if context and "agent_results" in context:
                 agent_results = context["agent_results"]
-            
+
             if not agent_results:
                 return AgentResult(
                     agent_name=self.name,
@@ -50,18 +120,117 @@ class RCASynthesizerAgent(BaseAgent):
                     success=False,
                     confidence="low",
                     summary="无法生成根因分析",
-                    detail="没有收到其他Agent的分析结果，无法进行综合分析。",
+                    detail="没有收到其他 Agent 的分析结果，无法进行综合分析。",
                     sources=[],
                 )
-            
-            # Read workspace notes for supplementary context
+
+            successful = [r for r in agent_results if r.success]
+            if not successful:
+                return AgentResult(
+                    agent_name=self.name,
+                    display_name=self.display_name,
+                    success=False,
+                    confidence="low",
+                    summary="所有 Agent 分析均未成功",
+                    detail="各个分析 Agent 均未能找到相关信息或分析失败。建议：\n"
+                           "1. 检查日志文件是否已上传\n"
+                           "2. 提供更具体的故障描述\n"
+                           "3. 补充 ECU 名称、错误码等关键信息",
+                    sources=[],
+                )
+
+            # 收集所有引用来源
+            all_sources = []
+            for ar in agent_results:
+                all_sources.extend(ar.sources)
+
+            # 读取 workspace notes 作为补充上下文
             workspace_notes = self._read_workspace_notes(context)
-            
-            # Synthesize results
-            return self._synthesize_results(task, agent_results, workspace_notes)
-    
-    def _read_workspace_notes(self, context: dict | None) -> str:
-        """读取工作区 notes.md 作为补充推理上下文（可选，降级安全）"""
+
+            # 组装 LLM 输入
+            evidence_text = self._build_evidence_text(agent_results, workspace_notes)
+            messages = [
+                {"role": "system", "content": RCA_SYSTEM_PROMPT},
+                {"role": "user", "content": f"用户问题：{task}\n\n{evidence_text}"},
+            ]
+
+            # 调用 LLM（synthesizer-model）
+            try:
+                accumulated = ""
+                async for delta in chat_completion_stream(
+                    messages,
+                    max_tokens=4096,
+                    model="synthesizer-model",
+                ):
+                    accumulated += delta
+
+                chain_debug(
+                    log,
+                    step="agent.rca_synthesizer",
+                    event="LLM_OK",
+                    out_chars=len(accumulated),
+                )
+
+                confidence = self._calculate_confidence(successful)
+
+                return AgentResult(
+                    agent_name=self.name,
+                    display_name=self.display_name,
+                    success=True,
+                    confidence=confidence,
+                    summary=f"综合分析完成 — 基于 {len(successful)} 个 Agent 的证据交叉关联",
+                    detail=accumulated,
+                    sources=all_sources,
+                    raw_data={
+                        "agent_count": len(agent_results),
+                        "successful_count": len(successful),
+                        "confidence_scores": [r.confidence for r in successful],
+                        "llm_used": True,
+                    },
+                )
+
+            except Exception as e:
+                chain_debug(
+                    log,
+                    step="agent.rca_synthesizer",
+                    event="LLM_FALLBACK",
+                    error_type=type(e).__name__,
+                    error_msg=str(e)[:200],
+                )
+                log.exception("[RCASynthesizer] LLM unavailable, using template fallback")
+                return self._template_fallback(task, agent_results, all_sources)
+
+    # ── 内部方法 ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_evidence_text(
+        agent_results: List[AgentResult],
+        workspace_notes: str = "",
+    ) -> str:
+        """将各 Agent 结果组装为 LLM 可读的证据文本。"""
+        parts = ["## 各诊断 Agent 分析结果\n"]
+
+        for ar in agent_results:
+            status = "✅ 成功" if ar.success else "❌ 失败"
+            parts.append(f"### {ar.display_name} [{status}] (置信度: {ar.confidence})")
+            parts.append(f"**摘要**: {ar.summary}\n")
+            if ar.detail:
+                parts.append(ar.detail)
+            if ar.sources:
+                parts.append("\n**引用来源**:")
+                for s in ar.sources:
+                    parts.append(f"- [{s.get('type', 'unknown').upper()}] {s.get('title', '未知')}")
+            parts.append("\n---\n")
+
+        if workspace_notes:
+            parts.append("## 工作区补充笔记\n")
+            parts.append(workspace_notes)
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _read_workspace_notes(context: dict | None) -> str:
+        """读取工作区 notes.md 作为补充推理上下文（可选，降级安全）。"""
         if not context or "workspace_path" not in context:
             return ""
         try:
@@ -74,223 +243,63 @@ class RCASynthesizerAgent(BaseAgent):
         except Exception as e:
             log.warning("Failed to read workspace notes: %s", e)
         return ""
-    
-    def _synthesize_results(self, task: str, agent_results: List[AgentResult], workspace_notes: str = "") -> AgentResult:
-        """Synthesize multiple agent results into a comprehensive RCA."""
-        
-        # Collect successful results
-        successful_results = [r for r in agent_results if r.success]
-        
-        if not successful_results:
-            return AgentResult(
-                agent_name=self.name,
-                display_name=self.display_name,
-                success=False,
-                confidence="low",
-                summary="所有Agent分析均未成功",
-                detail="各个分析Agent均未能找到相关信息或分析失败。建议：\n"
-                       "1. 检查日志文件是否已上传\n"
-                       "2. 提供更具体的故障描述\n"
-                       "3. 补充ECU名称、错误码等关键信息",
-                sources=[],
-            )
-        
-        # Calculate overall confidence
-        confidence = self._calculate_confidence(successful_results)
-        
-        # Build comprehensive analysis
-        detail_parts = []
-        all_sources = []
-        
-        # Add executive summary
-        detail_parts.append("## 🎯 诊断结论\n")
-        detail_parts.append(self._generate_executive_summary(successful_results))
-        detail_parts.append("\n")
-        
-        # Add detailed analysis from each agent
-        detail_parts.append("## 📊 详细分析\n")
-        for result in successful_results:
-            detail_parts.append(f"### {result.display_name}\n")
-            detail_parts.append(f"**置信度**: {result.confidence}\n")
-            detail_parts.append(f"**摘要**: {result.summary}\n\n")
-            detail_parts.append(result.detail)
-            detail_parts.append("\n\n")
-            
-            # Collect sources
-            if result.sources:
-                all_sources.extend(result.sources)
-        
-        # Add recommendations
-        detail_parts.append("## 💡 修复建议\n")
-        detail_parts.append(self._generate_recommendations(successful_results))
-        
-        # Validate citation references
-        citation_warnings = self._validate_citations(all_sources, successful_results)
-        
-        # Add evidence references
-        if all_sources:
-            detail_parts.append("\n\n## 📚 证据来源\n")
-            for idx, source in enumerate(all_sources, 1):
-                source_type = source.get("type", "unknown")
-                title = source.get("title", "未知来源")
-                detail_parts.append(f"{idx}. [{source_type.upper()}] {title}\n")
-        
-        if citation_warnings:
-            detail_parts.append("\n\n> ⚠️ **引用校验提示**\n")
-            for w in citation_warnings:
-                detail_parts.append(f"> - {w}\n")
-        
+
+    @staticmethod
+    def _calculate_confidence(results: List[AgentResult]) -> str:
+        """基于各 Agent 置信度的加权平均计算整体置信度。"""
+        if not results:
+            return "low"
+        score_map = {"high": 3, "medium": 2, "low": 1}
+        avg = sum(score_map.get(r.confidence, 1) for r in results) / len(results)
+        if avg >= 2.5:
+            return "high"
+        elif avg >= 1.5:
+            return "medium"
+        return "low"
+
+    def _template_fallback(
+        self,
+        task: str,
+        agent_results: List[AgentResult],
+        all_sources: list[dict],
+    ) -> AgentResult:
+        """LLM 不可用时的模板降级方案。"""
+        successful = [r for r in agent_results if r.success]
+        confidence = self._calculate_confidence(successful)
+
+        source_names = [s.get("title", "未知") for s in all_sources] or ["系统日志"]
+
+        parts = [
+            f"## 信息分析\n\n主要来源：{'、'.join(source_names)}\n置信度：{confidence}\n\n---\n",
+            "## 技术解答\n\n### 关键发现\n",
+        ]
+        for r in successful:
+            parts.append(f"**{r.display_name}**: {r.summary}\n")
+        parts.append("\n### 具体过程\n")
+        for r in successful:
+            if r.detail:
+                parts.append(f"#### {r.display_name}\n{r.detail}\n\n")
+
+        parts.append("---\n\n## 建议措施\n\n")
+        parts.append("1. 根据上述分析结果对照排查\n")
+        parts.append("2. 如信息不足，请补充更多日志或故障描述\n")
+        parts.append("3. 参考历史类似案例的修复方案\n")
+        parts.append("\n> ⚠️ 当前为降级模式（LLM 服务不可用），建议稍后重试以获得更精确的根因分析。\n")
+
         return AgentResult(
             agent_name=self.name,
             display_name=self.display_name,
             success=True,
             confidence=confidence,
-            summary=f"综合分析完成 - 基于{len(successful_results)}个Agent的分析结果",
-            detail="\n".join(detail_parts),
+            summary=f"综合分析完成（降级模式）— 基于 {len(successful)} 个 Agent 结果",
+            detail="\n".join(parts),
             sources=all_sources,
             raw_data={
                 "agent_count": len(agent_results),
-                "successful_count": len(successful_results),
-                "confidence_scores": [r.confidence for r in successful_results],
-                "citation_warnings": citation_warnings,
-            }
+                "successful_count": len(successful),
+                "llm_used": False,
+            },
         )
-    
-    def _calculate_confidence(self, results: List[AgentResult]) -> str:
-        """Calculate overall confidence based on individual agent confidences."""
-        if not results:
-            return "low"
-        
-        # Map confidence levels to scores
-        confidence_map = {"high": 3, "medium": 2, "low": 1}
-        
-        scores = [confidence_map.get(r.confidence, 1) for r in results]
-        avg_score = sum(scores) / len(scores)
-        
-        # Convert back to confidence level
-        if avg_score >= 2.5:
-            return "high"
-        elif avg_score >= 1.5:
-            return "medium"
-        else:
-            return "low"
-    
-    def _generate_executive_summary(self, results: List[AgentResult]) -> str:
-        """Generate executive summary from agent results."""
-        summaries = []
-        
-        for result in results:
-            if result.agent_name == "log_analytics":
-                summaries.append(f"**日志分析**: {result.summary}")
-            elif result.agent_name == "jira_knowledge":
-                summaries.append(f"**历史案例**: {result.summary}")
-            else:
-                summaries.append(f"**{result.display_name}**: {result.summary}")
-        
-        if not summaries:
-            return "未能生成诊断结论。"
-        
-        return "\n".join(summaries)
-    
-    def _generate_recommendations(self, results: List[AgentResult]) -> str:
-        """Generate actionable recommendations based on analysis."""
-        recommendations = []
-        
-        # Extract recommendations from agent results
-        for result in results:
-            detail_lower = result.detail.lower()
-            
-            # Look for common patterns in analysis
-            if "校验失败" in result.detail or "verify" in detail_lower:
-                recommendations.append(
-                    "1. **升级包校验机制优化**\n"
-                    "   - 增加校验失败重试上限(建议max=3)\n"
-                    "   - 实现校验失败后的自动回退机制\n"
-                    "   - 增强文件完整性检查(MD5/SHA256)"
-                )
-            
-            if "死循环" in result.detail or "循环" in result.detail:
-                recommendations.append(
-                    "2. **状态机保护机制**\n"
-                    "   - 为关键状态添加超时保护\n"
-                    "   - 实现异常状态的自动退出机制\n"
-                    "   - 增加状态转换日志记录"
-                )
-            
-            if "ecu" in detail_lower or "刷写" in result.detail:
-                recommendations.append(
-                    "3. **ECU刷写流程优化**\n"
-                    "   - 优化ECU刷写顺序和依赖关系\n"
-                    "   - 增加独立的超时保护机制\n"
-                    "   - 实现刷写失败的回退策略"
-                )
-        
-        # Add generic recommendations if none found
-        if not recommendations:
-            recommendations.append(
-                "1. 建议收集更多日志信息进行深入分析\n"
-                "2. 检查系统配置和环境参数\n"
-                "3. 参考历史类似案例的修复方案"
-            )
-        
-        return "\n\n".join(recommendations)
-
-    @staticmethod
-    def _validate_citations(
-        all_sources: list[dict],
-        agent_results: list,
-    ) -> list[str]:
-        """
-        引用 ID 断言验证
-
-        检查综合报告中引用的 source 是否来自有效的 Agent 结果，
-        以及是否存在孤立引用、重复引用或缺失必要字段。
-
-        Args:
-            all_sources: 合并后的所有引用来源
-            agent_results: 各 Agent 的执行结果
-
-        Returns:
-            list[str]: 验证警告列表（空列表表示全部通过）
-        """
-        warnings = []
-
-        # 1. 检查引用完整性 — 每个 source 必须有 title 和 type
-        for idx, src in enumerate(all_sources, 1):
-            if not src.get("title"):
-                warnings.append(f"引用 #{idx} 缺少 title 字段")
-            if not src.get("type"):
-                warnings.append(f"引用 #{idx} 缺少 type 字段")
-
-        # 2. 检查引用来源一致性 — source 必须来自某个 agent 的 result
-        agent_source_titles = set()
-        for ar in agent_results:
-            for s in (ar.sources or []):
-                agent_source_titles.add(s.get("title", ""))
-
-        for idx, src in enumerate(all_sources, 1):
-            title = src.get("title", "")
-            if title and title not in agent_source_titles:
-                warnings.append(
-                    f"引用 #{idx}「{title}」未在任何 Agent 结果中找到对应来源"
-                )
-
-        # 3. 检查重复引用
-        seen_titles = set()
-        for idx, src in enumerate(all_sources, 1):
-            title = src.get("title", "")
-            if title in seen_titles:
-                warnings.append(f"引用 #{idx}「{title}」重复出现")
-            seen_titles.add(title)
-
-        # 4. 检查无引用的 Agent — 某个 Agent 成功但无 source 引用
-        for ar in agent_results:
-            if ar.success and not ar.sources:
-                warnings.append(
-                    f"Agent「{ar.display_name}」分析成功但未提供引用来源"
-                )
-
-        return warnings
 
 
 registry.register(RCASynthesizerAgent())

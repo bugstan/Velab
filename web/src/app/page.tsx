@@ -98,13 +98,13 @@ export default function Home() {
     if (isRunning) return;
 
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       role: "user",
       content: message,
       timestamp: new Date(),
     };
 
-    const assistantId = (Date.now() + 1).toString();
+    const assistantId = crypto.randomUUID();
     const assistantMessage: ChatMessage = {
       id: assistantId,
       role: "assistant",

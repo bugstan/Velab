@@ -161,6 +161,18 @@ async def chat(request: Request):
     scenario_id: str = body.get("scenarioId", "fota-diagnostic")
     history: list[dict] = body.get("history", [])
 
+    # ── 输入校验 ──
+    if not isinstance(user_message, str) or not user_message.strip():
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"error": "message 不能为空"})
+    MAX_MESSAGE_LEN = 10_000  # 单条消息最大字符数
+    if len(user_message) > MAX_MESSAGE_LEN:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"error": f"message 超过最大长度 {MAX_MESSAGE_LEN}"})
+    MAX_HISTORY_TURNS = 20  # 最多保留最近 N 轮对话
+    if isinstance(history, list) and len(history) > MAX_HISTORY_TURNS * 2:
+        history = history[-(MAX_HISTORY_TURNS * 2):]
+
     async def event_generator():
         """SSE 事件生成器，负责流式推送诊断过程"""
         # 为本次请求分配唯一的 trace_id，用于日志追踪

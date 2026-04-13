@@ -20,10 +20,12 @@ web/
 │   │   ├── InputBar.tsx       # 输入框
 │   │   ├── Header.tsx         # 页头
 │   │   ├── WelcomePage.tsx    # 欢迎页
+│   │   ├── SourcePanel.tsx    # 证据来源面板
 │   │   └── FeedbackButtons.tsx # 反馈按钮
 │   └── lib/                   # 工具库
 │       ├── types.ts           # TypeScript 类型定义
-│       └── sseParse.ts        # SSE 解析器
+│       ├── sseParse.ts        # SSE 解析器
+│       └── mockResponses.ts   # Mock 响应数据
 ├── public/                    # 静态资源
 ├── package.json               # 依赖配置
 ├── tsconfig.json              # TypeScript 配置
@@ -91,6 +93,8 @@ npm run start
 4. 部署
 
 ### Docker 部署
+
+> **注意**: 本项目生产推荐使用 systemd 部署（见下方「传统服务器部署」），Docker 仅作备选。
 
 ```bash
 # 构建镜像

@@ -26,10 +26,10 @@ backend/
 ├── api/                     # RESTful API接口层 (22个端点)
 │   ├── __init__.py
 │   ├── schemas.py           # Pydantic数据模型
-│   ├── cases.py             # Case管理接口（5个端点）
-│   ├── logs.py              # 日志文件上传接口（2个端点）
+│   ├── cases.py             # Case管理接口（4个端点）
+│   ├── logs.py              # 日志文件上传接口（4个端点）
 │   ├── parse.py             # 解析任务接口（3个端点）
-│   ├── events.py            # 事件查询导出接口（5个端点）
+│   ├── events.py            # 事件查询导出接口（4个端点）
 │   ├── feedback.py          # 诊断反馈接口（5个端点）(NEW)
 │   └── metrics.py           # 监控指标接口（2个端点）(NEW)
 ├── models/                  # SQLAlchemy ORM模型
@@ -66,8 +66,7 @@ backend/
 ├── tests/                   # 测试套件
 │   ├── conftest.py          # 测试配置和fixtures
 │   ├── test_workspace_manager.py # 工作区沙盒功能测试 (17个测试用例)
-│   ├── test_api_cases.py    # Cases API测试
-│   ├── test_api_logs.py     # Logs API测试
+│   ├── test_api_cases.py    # Cases API测试（9个测试）
 │   ├── test_api_parse.py    # Parse API测试（8个测试）
 │   ├── test_api_events.py   # Events API测试（13个测试）
 │   ├── test_integration.py  # 集成测试（4个测试）

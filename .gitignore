@@ -52,6 +52,7 @@ venv.bak/
 *.log
 logs/
 *.log.*
+/logs/
 
 # ── 数据文件 ──
 data/

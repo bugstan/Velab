@@ -25,17 +25,17 @@
 Velab/
 ├── backend/              # FastAPI 后端服务
 │   ├── agents/           # Agent 实现（Log/Jira/Doc）
-│   ├── api/              # RESTful API接口（15个端点）
+│   ├── api/              # RESTful API接口（22个端点）
 │   ├── models/           # SQLAlchemy ORM模型
 │   ├── services/         # 核心服务（Parser/TimeAlignment/WorkspaceManager）
 │   ├── tasks/            # Arq异步任务队列
-│   ├── tests/            # API单元测试和集成测试（10+新增工作区测试）
+│   ├── tests/            # API单元测试和集成测试（50+测试用例）
+│   ├── data/             # 数据持久化层
+│   │   ├── logs/         # 原始日志
+│   │   ├── eval/         # 评测用例与报告
+│   │   ├── jira_mock/    # Mock Jira 工单数据
+│   │   └── workspaces/   # Agent 运行时 Markdown 工作区
 │   └── README.md         # Backend 部署文档
-│
-├── data/                 # 数据持久化层
-│   ├── logs/             # 原始日志
-│   ├── eval/             # 评测用例与报告
-│   └── workspaces/       # Agent 运行时 Markdown 工作区（NEW）
 │
 ├── gateway/              # LiteLLM API 中转层
 │   └── ...
@@ -156,7 +156,7 @@ open http://localhost:8000/docs
 | 数据与演示场景 | 40% | 🚧 进行中 |
 | **评测与验收 (基准测试)** | 100% | ✅ 完成 |
 
-**总体进度**: 约 **95%**
+**总体进度**: 约 **93%**
 
 详细任务清单请查看：
 - [TODO.md](docs/TODO.md) - 项目任务清单（最新）
@@ -171,7 +171,7 @@ open http://localhost:8000/docs
 
 - **[CLAUDE.md](CLAUDE.md)** - 完整项目文档（开发指南、API 文档、部署指南）⭐ 推荐首先阅读
 - **[TODO.md](docs/TODO.md)** - 项目任务清单（最新进度）
-- **[Agent内存重构方案](docs/Agent内存_Markdown化重构方案.md)** - Sprint 5 核心架构设计文档 ⭐
+- **[Agent内存重构方案](docs/Agent内存_Markdown化重构方案.md)** - Agent 工作区记忆架构设计文档 ⭐
 - **[Workspace评测报告](docs/Workspace评测基准报告.md)** - 系统性能与诊断质量基准报告 ⭐
 
 ### 实施报告
@@ -181,8 +181,7 @@ open http://localhost:8000/docs
 ### 系统设计
 
 - [AI专家项目分析报告](docs/AI专家项目分析报告.md) - 项目深度分析（⭐⭐⭐⭐⭐ 4.8/5.0）
-- [技术设计方案（修订版 v6）](docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 系统架构设计（最终执行版）
-- [FOTA智能诊断平台_可行性方案（修订版v6）](docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 可行性分析
+- [FOTA智能诊断平台_可行性方案（修订版v6）](docs/FOTA智能诊断平台_可行性方案（修订版v6）.md) - 系统架构设计与可行性分析（最终执行版）
 
 ### 部署运维
 
@@ -203,11 +202,11 @@ open http://localhost:8000/docs
 | 层次 | 技术 |
 |------|------|
 | 后端框架 | Python 3.12 + FastAPI |
-| AI 编排 | 纯 Python async + LangChain Tool 抽象 |
-| LLM 供应商 | Claude（主力）+ OpenAI（Fallback + Embedding） |
+| AI 编排 | 纯 Python async + OpenAI function-calling |
+| LLM 供应商 | Claude（主力）+ OpenAI（Fallback） |
 | 任务队列 | Arq（原生 async/await） |
-| 数据库 | PostgreSQL + pgvector |
-| 对象存储 | MinIO / S3 |
+| 数据库 | PostgreSQL |
+| 向量检索 | TF-IDF baseline（预留 embedding 接口） |
 | 缓存 | Redis |
 | 前端框架 | Next.js 16 + React 19 + TypeScript 6 |
 | 前端样式 | Tailwind CSS 4 |
@@ -245,6 +244,6 @@ open http://localhost:8000/docs
 
 ---
 
-**项目状态**: 🚧 开发中（Sprint 5 工作区重构已通过，进入系统集成与演示场景准备阶段）
-**最后更新**: 2026-04-06
+**项目状态**: 🚧 开发中（Sprint 4 批量实现已完成，进入部署加固与演示场景准备阶段）
+**最后更新**: 2026-04-13
 **维护团队**: AI 开发专家

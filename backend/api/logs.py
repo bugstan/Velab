@@ -111,9 +111,20 @@ async def upload_log_file(
             detail=f"Invalid source_type. Must be one of: {', '.join(valid_types)}"
         )
     
-    # 读取文件内容
+    # 文件大小限制（50MB）
+    MAX_UPLOAD_SIZE = 50 * 1024 * 1024
     content = await file.read()
     file_size = len(content)
+    if file_size > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({file_size} bytes). Maximum allowed: {MAX_UPLOAD_SIZE} bytes (50MB)"
+        )
+    if file_size == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded file is empty"
+        )
     
     # 生成文件ID
     file_id = _generate_file_id(case_id, file.filename, content)
