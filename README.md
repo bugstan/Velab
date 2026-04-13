@@ -73,11 +73,39 @@ cp .env.example .env
 ./scripts/start-dev.sh
 ```
 
-#### 3. 验证服务
+Backend 开发环境依赖：
+- PostgreSQL：默认 `127.0.0.1:5432`，数据库 `fota_db`
+- Redis：默认 `127.0.0.1:6379`
+
+如果本地数据库结构需要重建，可执行：
+
+```bash
+cd backend
+./scripts/reset_db.sh --yes
+```
+
+该脚本会删除并重建 `fota_db`，再基于当前 ORM 模型重新建表。
+
+#### 3. 启动 Web
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+默认访问地址为 `http://localhost:3000`。
+
+如果提示已有 Next.js dev server 正在运行，说明 3000 端口已被现有开发进程占用。此时优先复用现有 3000 进程，或先结束旧进程后再启动。
+
+#### 4. 验证服务
 
 ```bash
 # Backend 健康检查
 curl http://localhost:8000/health
+
+# Web 首页
+curl http://localhost:3000/
 
 # Gateway 健康检查（如果启动了）
 curl http://localhost:4000/health
@@ -173,6 +201,13 @@ open http://localhost:8000/docs
 - **[TODO.md](docs/TODO.md)** - 项目任务清单（最新进度）
 - **[Agent内存重构方案](docs/Agent内存_Markdown化重构方案.md)** - Agent 工作区记忆架构设计文档 ⭐
 - **[Workspace评测报告](docs/Workspace评测基准报告.md)** - 系统性能与诊断质量基准报告 ⭐
+
+### 当前开发约定
+
+- 日志源类型以真实样本为准：`android`、`fota_hmi`、`dlt`、`mcu`、`ibdu`
+- Web 上传统一通过 Next.js 代理路由转发到 Backend
+- 上传流程依赖 Case 元数据和文件元数据入库，因此 PostgreSQL 不可用时页面上传会失败
+- “提交解析”后后端任务会自动执行时间对齐；UI 上“时间对齐”按钮用于手动补跑
 
 ### 实施报告
 

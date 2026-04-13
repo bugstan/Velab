@@ -76,6 +76,7 @@ backend/
 │   └── redaction.py         # 数据脱敏
 ├── scripts/                 # 部署和启动脚本
 │   ├── deploy.sh            # 生产环境部署脚本
+│   ├── reset_db.sh          # 开发环境一键重建数据库脚本
 │   └── start-dev.sh         # 开发环境启动脚本
 ├── systemd/                 # systemd 服务配置
 │   └── fota-backend.service
@@ -108,6 +109,10 @@ cp .env.example .env
 
 ### 3. 启动服务
 
+启动前请确保以下依赖可用：
+- PostgreSQL：默认 `127.0.0.1:5432`
+- Redis：默认 `127.0.0.1:6379`
+
 **方式 A：使用启动脚本（推荐）**
 ```bash
 chmod +x scripts/start-dev.sh
@@ -119,6 +124,15 @@ chmod +x scripts/start-dev.sh
 python main.py
 ```
 
+如果开发环境数据库结构与当前代码不一致，或需要清空重建开发数据：
+
+```bash
+chmod +x scripts/reset_db.sh
+./scripts/reset_db.sh --yes
+```
+
+该命令会重建 `fota_db` 并基于当前 ORM 模型重新建表。
+
 ### 4. 验证服务
 
 ```bash
@@ -127,6 +141,28 @@ curl http://localhost:8000/health
 
 # API 文档
 open http://localhost:8000/docs
+```
+
+### 5. 上传链路说明
+
+当前上传流程是完整的 Case 驱动链路，而不是单纯写磁盘：
+
+1. 创建或确认 `case_id`
+2. 上传原始日志并写入 `raw_log_files`
+3. 后续解析任务把结构化事件写入 `diagnosis_events`
+4. 解析任务完成后自动执行时间对齐
+
+当前支持的真实日志源类型：
+- `android`
+- `fota_hmi`
+- `dlt`
+- `mcu`
+- `ibdu`
+
+上传文件会保留清洗后的原始文件名，实际落盘格式为：
+
+```text
+{file_id}_{sanitized_original_filename}
 ```
 
 ---
@@ -157,6 +193,8 @@ cd Velab/backend
 sudo chmod +x scripts/deploy.sh
 sudo ./scripts/deploy.sh
 ```
+
+说明：`create_tables()` 只负责创建当前不存在的表，不负责旧库字段迁移。开发环境出现 schema 漂移时，优先使用 `scripts/reset_db.sh --yes` 重建数据库。
 
 部署脚本会自动完成：
 - ✅ 创建系统用户 `fota`

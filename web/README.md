@@ -11,11 +11,16 @@ web/
 ├── src/
 │   ├── app/                    # Next.js App Router
 │   │   ├── api/chat/          # API 路由（代理层）
+│   │   ├── api/cases/         # Case 创建代理
+│   │   ├── api/logfiles/      # 日志列表 / 上传代理
+│   │   ├── api/parse/         # 解析 / 状态 / 时间对齐代理
 │   │   ├── page.tsx           # 主页面
 │   │   ├── layout.tsx         # 根布局
 │   │   └── globals.css        # 全局样式
 │   ├── components/            # React 组件
 │   │   ├── ChatMessage.tsx    # 消息组件
+│   │   ├── LogUploadPanel.tsx # 日志上传面板
+│   │   ├── UploadedCaseSidebar.tsx # Case 列表与详情侧栏
 │   │   ├── ThinkingProcess.tsx # 思考过程展示
 │   │   ├── InputBar.tsx       # 输入框
 │   │   ├── Header.tsx         # 页头
@@ -72,6 +77,13 @@ pnpm dev
 
 访问 [http://localhost:3000](http://localhost:3000) 查看应用。
 
+如果提示 `Another next dev server is already running`，说明已有开发进程占用了 3000 端口。此时：
+- 优先直接复用已有的 `http://localhost:3000`
+- 或结束旧进程后重新执行 `npm run dev`
+- 不建议同时保留多个 `next dev` 进程
+
+如果 Next 自动切换到 3001，则代理接口地址也会变成 `http://localhost:3001/api/...`。
+
 ### 4. 构建生产版本
 
 ```bash
@@ -126,6 +138,14 @@ sudo systemctl start fota-web
 
 ## 🎨 核心功能
 
+### 0. 日志工作流
+
+- 上传面板位于右侧内容区顶部
+- Case ID 自动生成，也可点击“新建”重新生成
+- 左侧侧栏展示 Case 列表、上传时间、解析状态汇总，以及按日志类型分组的文件详情
+- “提交解析”会触发后端解析任务，解析完成后自动执行时间对齐
+- “时间对齐”按钮用于对已有事件手动补跑
+
 ### 1. 实时流式诊断
 
 - 基于 SSE (Server-Sent Events) 的实时数据流
@@ -166,6 +186,26 @@ sudo systemctl start fota-web
 - **样式**: Tailwind CSS + CSS Variables
 - **状态管理**: React Hooks
 - **实时通信**: SSE (Server-Sent Events)
+
+### 上传与代理约定
+
+前端不直接请求 FastAPI，而是统一通过 Next.js Route Handlers 代理：
+
+- `/api/cases`
+- `/api/logfiles`
+- `/api/logfiles/upload`
+- `/api/parse/submit`
+- `/api/parse/status/:taskId`
+- `/api/parse/align-time/:caseId`
+
+默认后端地址由 `BACKEND_URL` 控制，未设置时回退到 `http://localhost:8000`。
+
+当前支持的日志源类型：
+- `android`
+- `fota_hmi`
+- `dlt`
+- `mcu`
+- `ibdu`
 
 ### 项目特点
 
