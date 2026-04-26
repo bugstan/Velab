@@ -6,10 +6,12 @@
 
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from models import Case, RawLogFile, DiagnosisEvent
 from models.log_file import ParseStatus
@@ -25,6 +27,59 @@ router = APIRouter()
 
 # 时间对齐服务
 time_alignment = TimeAlignmentService()
+
+
+@router.post("/submit-bundle", response_model=ParseTaskResponse, status_code=202)
+async def submit_bundle_task(
+    file: UploadFile = File(..., description="日志压缩包或单日志文件"),
+    case_id: str = Form(..., description="案例ID"),
+    db: Session = Depends(get_db),
+):
+    """
+    提交压缩包解析任务（统一进入 /api/parse 任务体系）。
+    """
+    case = db.query(Case).filter_by(case_id=case_id).first()
+    if not case:
+        case = Case(
+            case_id=case_id,
+            vin=None,
+            vehicle_model="Unknown",
+            issue_description="Auto created by bundle upload",
+            status="active",
+            meta_data={"auto_created": True},
+        )
+        db.add(case)
+        db.commit()
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    upload_root = Path(settings.STORAGE_ROOT) / "uploads" / case_id
+    upload_root.mkdir(parents=True, exist_ok=True)
+    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+    upload_name = file.filename or "upload.bin"
+    upload_path = upload_root / f"{ts}_{upload_name}"
+    upload_path.write_bytes(content)
+
+    task_client = await get_task_client()
+    task_id = await task_client.submit_bundle_task(
+        case_id=case_id,
+        upload_path=str(upload_path),
+        upload_name=upload_name,
+    )
+
+    return ParseTaskResponse(
+        task_id=task_id,
+        case_id=case_id,
+        status="pending",
+        total_files=1,
+        parsed_files=0,
+        failed_files=0,
+        total_events=0,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
 
 
 @router.post("/submit", response_model=ParseTaskResponse, status_code=202)

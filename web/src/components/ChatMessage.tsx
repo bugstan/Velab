@@ -24,6 +24,7 @@ import { ChatMessage as ChatMessageType } from "@/lib/types";
 import ThinkingProcess from "./ThinkingProcess";
 import FeedbackButtons from "./FeedbackButtons";
 import SourcePanel from "./SourcePanel";
+import { FOTA_OPEN_PARSE_TASK } from "@/components/TaskStatusLookup";
 
 /**
  * 组件属性接口
@@ -286,6 +287,31 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
               __html: renderMarkdown(message.content),
             }}
           />
+
+          {!message.isStreaming && message.parseTaskActions && message.parseTaskActions.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {message.parseTaskActions.map((a) => (
+                <button
+                  key={`${a.taskId}-${a.label}`}
+                  type="button"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent(FOTA_OPEN_PARSE_TASK, { detail: a.taskId })
+                    )
+                  }
+                  className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-90"
+                  style={{
+                    background: "var(--accent-blue)",
+                    color: "#fff",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  查看「{a.label}」任务状态
+                </button>
+              ))}
+            </div>
+          )}
 
           {!message.isStreaming && message.sources && message.sources.length > 0 && (
             <SourcePanel sources={message.sources} />

@@ -5,6 +5,7 @@ Arq Worker 配置和任务定义
 """
 
 import logging
+import json
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -18,8 +19,20 @@ from models.log_file import ParseStatus
 from services.event_normalizer import EventNormalizer
 from services.parser import parser_registry
 from services.time_alignment import TimeAlignmentService
+from services.log_bundle_ingest import ingest_bundle
 
 logger = logging.getLogger(__name__)
+
+
+async def _set_task_progress(ctx, task_id: str, percent: int, stage: str, message: str):
+    redis = ctx.get("redis")
+    if not redis or not task_id:
+        return
+    payload = json.dumps(
+        {"percent": percent, "stage": stage, "message": message},
+        ensure_ascii=False,
+    )
+    await redis.set(f"task_progress:{task_id}", payload, ex=3600)
 
 
 async def parse_logs_task(
@@ -209,6 +222,50 @@ async def parse_logs_task(
         db_manager.close()
 
 
+async def parse_bundle_task(
+    ctx,
+    case_id: str,
+    upload_path: str,
+    upload_name: str,
+) -> dict:
+    """压缩包解析任务：解压 -> 分类 -> 解析 -> 时间对齐。"""
+    task_id = ctx.get("job_id", "")
+    await _set_task_progress(ctx, task_id, 10, "preparing", "开始处理上传包")
+    db_manager.initialize()
+    try:
+        with db_manager.get_session() as db:
+            # 此处读入整包；大包或慢盘会花较长时间，与 ingest_bundle 内同步进度配合避免长时间卡在单一百分比
+            await _set_task_progress(ctx, task_id, 18, "reading", "正在读取压缩包到内存（大包可能需数十秒）…")
+            content = open(upload_path, "rb").read()
+            # ingest_bundle 内用同步 Redis 写 task_progress，避免阻塞在解析/库写入时协程不推进
+            result = ingest_bundle(
+                db=db,
+                case_id=case_id,
+                upload_name=upload_name,
+                content=content,
+                task_id=task_id,
+            )
+            task_result = {
+                "case_id": result.case_id,
+                "uploaded_file": result.uploaded_file,
+                "total_files": result.extracted_files,
+                "parsed_files": result.parsed_files,
+                "failed_files": result.failed_files,
+                "total_events": result.total_events,
+                "aligned_sources": result.aligned_sources,
+                "alignment_status": result.alignment_status,
+                "status": "completed" if result.failed_files == 0 else "partial_success",
+            }
+            await _set_task_progress(ctx, task_id, 100, "completed", "处理完成")
+            return task_result
+    except Exception as e:
+        await _set_task_progress(ctx, task_id, 100, "failed", f"处理失败: {e}")
+        logger.error(f"压缩包解析失败 - Case: {case_id}: {str(e)}", exc_info=True)
+        return {"case_id": case_id, "status": "failed", "error": str(e)}
+    finally:
+        db_manager.close()
+
+
 async def cleanup_old_tasks(ctx):
     """
     定期清理过期任务记录（示例定时任务）
@@ -234,7 +291,7 @@ class WorkerSettings:
     )
     
     # 注册的任务函数
-    functions = [parse_logs_task]
+    functions = [parse_logs_task, parse_bundle_task]
     
     # 定时任务（可选）
     cron_jobs = [

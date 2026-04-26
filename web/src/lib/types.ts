@@ -25,6 +25,12 @@ export interface ThinkingProcessData {
   isExpanded: boolean;
 }
 
+/** 与日志上传 /api/parse 任务关联的快捷操作（在气泡内展示「查看状态」等） */
+export interface ParseTaskAction {
+  label: string;
+  taskId: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -34,6 +40,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   sources?: SourceReference[];
   confidenceLevel?: string;
+  /** 有 Arq 任务时展示跳转到底栏状态查询的按钮 */
+  parseTaskActions?: ParseTaskAction[];
 }
 
 export interface SourceReference {

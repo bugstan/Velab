@@ -32,6 +32,7 @@ import {
   AgentStep,
 } from "@/lib/types";
 import { parseSSEBuffer } from "@/lib/sseParse";
+import { rememberLastParseTaskId } from "@/components/TaskStatusLookup";
 
 
 /**
@@ -64,6 +65,17 @@ export default function Home() {
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    active: boolean;
+    percent: number;
+    stage: string;
+    message: string;
+  }>({
+    active: false,
+    percent: 0,
+    stage: "",
+    message: "",
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -92,6 +104,119 @@ export default function Home() {
     setMessages((prev) =>
       prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
     );
+  };
+
+  const handleUploadFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    const resultLines: string[] = [];
+    const parseTaskActions: { label: string; taskId: string }[] = [];
+    for (const file of fileArray) {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("case_id", currentScenario.id);
+
+      try {
+        setUploadProgress({
+          active: true,
+          percent: 3,
+          stage: "uploading",
+          message: `正在上传 ${file.name}`,
+        });
+        const resp = await fetch("/api/upload-log", {
+          method: "POST",
+          body: form,
+        });
+        const payload = await resp.json();
+        if (!resp.ok) {
+          resultLines.push(`- ${file.name}: 上传失败 (${payload?.detail || payload?.error || resp.status})`);
+          continue;
+        }
+        const taskId = payload?.task_id;
+        if (!taskId) {
+          resultLines.push(`- ${file.name}: 提交任务失败（未返回 task_id）`);
+          continue;
+        }
+        rememberLastParseTaskId(taskId);
+        parseTaskActions.push({ label: file.name, taskId });
+
+        let finalStatus: {
+          status?: string;
+          error?: string;
+          result?: {
+            total_files?: number;
+            parsed_files?: number;
+            total_events?: number;
+            alignment_status?: string;
+          };
+          progress?: {
+            percent?: number;
+            stage?: string;
+            message?: string;
+          };
+        } | null = null;
+        for (let i = 0; i < 240; i += 1) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const stResp = await fetch(`/api/parse-status/${taskId}`);
+          const stPayload = await stResp.json();
+          const p = stPayload?.progress;
+          if (p) {
+            setUploadProgress({
+              active: true,
+              percent: Number(p.percent ?? 0),
+              stage: String(p.stage ?? "running"),
+              message: String(p.message ?? "处理中"),
+            });
+          } else {
+            setUploadProgress({
+              active: true,
+              percent: 20,
+              stage: stPayload?.status || "running",
+              message: "处理中",
+            });
+          }
+          if (stPayload?.status === "completed" || stPayload?.status === "failed") {
+            finalStatus = stPayload;
+            break;
+          }
+        }
+
+        if (!finalStatus) {
+          resultLines.push(
+            `- ${file.name}: 界面等待已结束，任务可能仍在后台处理，可点下方按钮查看实时状态。`
+          );
+          continue;
+        }
+
+        if (finalStatus.status === "failed") {
+          resultLines.push(`- ${file.name}: 处理失败 (${finalStatus?.error || "unknown error"})`);
+          continue;
+        }
+
+        const data = finalStatus?.result || {};
+        resultLines.push(
+          `- ${file.name}: 完成（解压文件 ${data.total_files ?? 0}，解析文件 ${data.parsed_files ?? 0}，事件 ${data.total_events ?? 0}，对齐 ${data.alignment_status ?? "UNKNOWN"}）`
+        );
+      } catch (err) {
+        resultLines.push(`- ${file.name}: 上传异常 (${(err as Error).message})`);
+      }
+    }
+    setUploadProgress({
+      active: false,
+      percent: 100,
+      stage: "completed",
+      message: "上传处理完成",
+    });
+
+    const uploadMessage: ChatMessage = {
+      id: `${Date.now()}-upload`,
+      role: "assistant",
+      content: `日志上传处理结果：\n${resultLines.join("\n")}`,
+      timestamp: new Date(),
+      ...(parseTaskActions.length > 0 ? { parseTaskActions } : {}),
+    };
+    setMessages((prev) => [...prev, uploadMessage]);
   };
 
   const handleSend = async (message: string) => {
@@ -329,6 +454,8 @@ export default function Home() {
         onSend={handleSend}
         isRunning={isRunning}
         onStop={handleStop}
+        onUploadFiles={handleUploadFiles}
+        uploadProgress={uploadProgress}
       />
     </div>
   );

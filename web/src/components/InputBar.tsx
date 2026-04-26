@@ -1,15 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import TaskStatusLookup from "@/components/TaskStatusLookup";
 
 interface InputBarProps {
   onSend: (message: string) => void;
   isRunning: boolean;
   onStop: () => void;
+  onUploadFiles: (files: FileList | File[]) => Promise<void>;
+  uploadProgress?: {
+    active: boolean;
+    percent: number;
+    stage: string;
+    message: string;
+  };
 }
 
-export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
+export default function InputBar({ onSend, isRunning, onStop, onUploadFiles, uploadProgress }: InputBarProps) {
   const [input, setInput] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -17,6 +27,11 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
       onSend(input.trim());
       setInput("");
     }
+  }
+
+  async function handleFiles(files: FileList | File[]) {
+    if (!files || files.length === 0) return;
+    await onUploadFiles(files);
   }
 
   return (
@@ -32,6 +47,19 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
     >
       <form
         onSubmit={handleSubmit}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+        }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setIsDragging(false);
+          await handleFiles(e.dataTransfer.files);
+        }}
         style={{
           maxWidth: "48rem",
           margin: "0 auto",
@@ -42,11 +70,23 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
           border: "1px solid var(--border-color)",
           background: "var(--bg-input)",
           padding: "8px 12px",
+          border: isDragging ? "1px solid var(--accent-blue)" : "1px solid var(--border-color)",
         }}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: "none" }}
+          onChange={async (e) => {
+            if (e.target.files) await handleFiles(e.target.files);
+            e.currentTarget.value = "";
+          }}
+        />
         {/* + button */}
         <button
           type="button"
+          onClick={() => fileInputRef.current?.click()}
           style={{
             flexShrink: 0,
             width: 32,
@@ -86,6 +126,7 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
         {/* attachment icon */}
         <button
           type="button"
+            onClick={() => fileInputRef.current?.click()}
           style={{
             flexShrink: 0,
             width: 32,
@@ -181,6 +222,26 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
           </button>
         )}
       </form>
+      {uploadProgress?.active ? (
+        <div style={{ maxWidth: "48rem", margin: "8px auto 0", color: "var(--text-secondary)", fontSize: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span>{uploadProgress.message || "处理中..."}</span>
+            <span>{Math.max(0, Math.min(100, uploadProgress.percent))}%</span>
+          </div>
+          <div style={{ width: "100%", height: 6, background: "var(--border-color)", borderRadius: 999 }}>
+            <div
+              style={{
+                width: `${Math.max(0, Math.min(100, uploadProgress.percent))}%`,
+                height: "100%",
+                background: "var(--accent-blue)",
+                borderRadius: 999,
+                transition: "width 240ms ease",
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+      <TaskStatusLookup />
     </div>
   );
 }

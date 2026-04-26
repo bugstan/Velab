@@ -23,12 +23,50 @@ from api.schemas import (
     SuccessResponse
 )
 from config import settings
+from services.log_bundle_ingest import ingest_bundle
 
 router = APIRouter()
 
 # 日志文件存储根目录
 STORAGE_ROOT = Path(settings.STORAGE_ROOT) / "logs"
 STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+@router.post("/upload-drag", response_model=SuccessResponse, status_code=201)
+async def upload_drag_bundle(
+    file: UploadFile = File(..., description="压缩包或单日志文件"),
+    case_id: str = Form("drag_upload_case", description="案例ID（默认自动案例）"),
+    db: Session = Depends(get_db),
+):
+    """
+    拖拽上传一体化入口：
+    上传后自动执行解压、分类、解析入库与时间对齐。
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    result = ingest_bundle(
+        db=db,
+        case_id=case_id,
+        upload_name=file.filename or "upload.bin",
+        content=content,
+    )
+
+    return SuccessResponse(
+        success=True,
+        message="Upload processed successfully",
+        data={
+            "case_id": result.case_id,
+            "uploaded_file": result.uploaded_file,
+            "extracted_files": result.extracted_files,
+            "parsed_files": result.parsed_files,
+            "failed_files": result.failed_files,
+            "total_events": result.total_events,
+            "aligned_sources": result.aligned_sources,
+            "alignment_status": result.alignment_status,
+        },
+    )
 
 
 def _generate_file_id(case_id: str, filename: str, content: bytes) -> str:
