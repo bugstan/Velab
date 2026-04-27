@@ -20,6 +20,12 @@ NC='\033[0m'
 VERBOSE=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=lib/common.sh
+# shellcheck disable=SC1090
+source "$SCRIPT_DIR/lib/common.sh"
+velab_path_prepend_brew
+velab_bootstrap_venv "$BACKEND_DIR"
+PY="${VELAB_PYTHON:-python3}"
 
 # ============================================================================
 # 辅助函数
@@ -129,7 +135,7 @@ init_minio() {
     
     print_info "MinIO Endpoint: $MINIO_ENDPOINT"
     
-    python3 << EOF
+    "$PY" << EOF
 import sys
 import os
 import json

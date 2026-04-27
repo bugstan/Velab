@@ -4,8 +4,8 @@
 # ============================================================
 # 用途：配置基础数据库实例（建库、建用户）
 # 注意：这仅做基础设施搭建。业务表的生成在 deploy.sh 内自动完成。
-# 推荐执行环境：本机 PostgreSQL
-# 使用：chmod +x ./init_postgres.sh && ./init_postgres.sh
+# 支持：Linux (systemd + postgres 系统用户) / macOS (Homebrew，以当前用户为超户)
+# 使用：在 backend 目录: chmod +x ./scripts/init_postgres.sh && ./scripts/init_postgres.sh
 
 set -e
 
@@ -15,16 +15,42 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+velab_path_prepend_brew
+BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
+velab_bootstrap_venv "$BACKEND_DIR"
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}FOTA PostgreSQL 基础设施初始化脚本${NC}"
 echo -e "${GREEN}========================================${NC}"
+velab_print_os_hint
 echo ""
 
-# 1. 检查是否存在 psql 命令
-if ! command -v psql &> /dev/null; then
-    echo -e "${RED}错误: 未检测到 PostgreSQL (psql 命令未找到)${NC}"
-    echo -e "${YELLOW}如未安装，请考虑在 Ubuntu / Debian 执行:${NC}"
-    echo -e "sudo apt update && sudo apt install postgresql postgresql-contrib"
+# 0. 先尝试启动本机服务（与 psql 是否已在 PATH 无关）
+if [ "$VELAB_OS" = "linux" ]; then
+  if ! systemctl is-active --quiet postgresql 2>/dev/null && ! service postgresql status &>/dev/null; then
+    echo -e "${YELLOW}尝试启动 postgresql 服务 (systemd)...${NC}"
+    systemctl start postgresql 2>/dev/null || service postgresql start 2>/dev/null || true
+  fi
+elif [ "$VELAB_OS" = "macos" ]; then
+  echo -e "${YELLOW}macOS: 若未运行，可执行: brew services start postgresql@16${NC}"
+  if command -v brew &>/dev/null; then
+    for ver in 16 15; do
+      if brew list "postgresql@$ver" &>/dev/null; then
+        brew services start "postgresql@$ver" 2>/dev/null && break
+      fi
+    done
+  fi
+  sleep 1
+fi
+
+# 1. 检查 psql
+if ! velab_find_psql &>/dev/null; then
+    echo -e "${RED}错误: 未检测到 PostgreSQL (psql)${NC}"
+    echo -e "${YELLOW}Ubuntu/Debian:${NC} sudo apt install postgresql postgresql-contrib"
+    echo -e "${YELLOW}macOS (Homebrew):${NC} brew install postgresql@16 && brew services start postgresql@16"
     exit 1
 fi
 
@@ -32,7 +58,7 @@ function initialize_db() {
     echo -e "${BLUE}环境检测通过，开始初始化 PostgreSQL 用户与数据库...${NC}"
 
 # 从 .env 中加载变量（如果文件存在）
-ENV_FILE="$(dirname "$0")/../.env"
+ENV_FILE="${SCRIPT_DIR}/../.env"
 DB_USER="postgres"
 DB_PASS="fota_password"
 DB_NAME="fota_db"
@@ -51,9 +77,8 @@ echo -e "  - 管理员账户名: ${DB_USER}"
 echo -e "  - 账户访问密码: (已隐藏)"
 echo ""
 
-# 为了防止当前非 postgres 实体用户执行，使用 sudo -u postgres 拉起 psql 执行
-# 注意：这要求机器上 PostgreSQL 服务处在正常运行状态（systemctl start postgresql）
-sudo -u postgres psql -v ON_ERROR_STOP=1 --username postgres <<-EOSQL
+# Linux: sudo -u postgres；macOS: 以当前用户连本机 postgres（常见 Homebrew 超户）
+velab_run_psql_admin <<-EOSQL
     -- (1) 如果是默认的 postgres 用户，确保给他设立密码；或者创建一个新用户
     DO \$\$
     BEGIN
@@ -72,20 +97,17 @@ EOSQL
 
     echo -e "${GREEN}✓ 数据库及用户基础设施准备完毕！${NC}"
     echo -e "${YELLOW}重要提示：${NC}"
-    echo -e "  1. 如果连接失败，请检查 /etc/postgresql/<version>/main/pg_hba.conf 是否允许 md5/scram 认证。"
-    echo -e "  2. 默认 Ubuntu 可能使用 Peer 认证，建议将 127.0.0.1 的 IPv4 验证方式改为 md5。"
-    echo -e "  3. 如果还需要高级检索，请手动执行: CREATE EXTENSION vector;"
+    if [ "$VELAB_OS" = "linux" ]; then
+      echo -e "  1. 如连接失败，请检查 /etc/postgresql/<version>/main/pg_hba.conf（md5/scram）。"
+      echo -e "  2. 若还需要向量检索: CREATE EXTENSION vector;"
+    else
+      echo -e "  1. macOS: 数据目录在 brew 前缀下，认证见 \$(brew --prefix postgresql*)/ 说明。"
+      echo -e "  2. 若还需要向量检索: 在 fota_db 中执行 CREATE EXTENSION vector;"
+    fi
     return 0
 }
 
 # ============================================================
 # 主逻辑
 # ============================================================
-
-# 检查服务状态
-if ! systemctl is-active --quiet postgresql && ! service postgresql status > /dev/null 2>&1; then
-    echo -e "${RED}警告: PostgreSQL 服务并未运行。尝试自动启动...${NC}"
-    systemctl start postgresql || service postgresql start || true
-fi
-
 initialize_db

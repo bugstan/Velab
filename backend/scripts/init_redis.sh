@@ -20,6 +20,12 @@ NC='\033[0m'
 VERBOSE=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=lib/common.sh
+# shellcheck disable=SC1090
+source "$SCRIPT_DIR/lib/common.sh"
+velab_path_prepend_brew
+velab_bootstrap_venv "$BACKEND_DIR"
+PY="${VELAB_PYTHON:-python3}"
 
 # ============================================================================
 # 辅助函数
@@ -93,10 +99,17 @@ if [ -z "$REDIS_URL" ]; then
     fi
 fi
 
+# 若仍无 REDIS_URL，从分散变量自动拼接（与项目标准 env 变量对齐）
 if [ -z "$REDIS_URL" ]; then
-    print_error "REDIS_URL 未设置"
-    echo "请设置环境变量或使用 --redis-url 参数"
-    exit 1
+    _host="${REDIS_HOST:-localhost}"
+    _port="${REDIS_PORT:-6379}"
+    _pass="${REDIS_PASSWORD:-}"
+    if [ -n "$_pass" ]; then
+        REDIS_URL="redis://:${_pass}@${_host}:${_port}/0"
+    else
+        REDIS_URL="redis://${_host}:${_port}/0"
+    fi
+    print_info "从 REDIS_HOST/PORT/PASSWORD 拼接 REDIS_URL: $REDIS_URL"
 fi
 
 # ============================================================================
@@ -108,7 +121,7 @@ init_redis() {
     
     print_info "Redis URL: $REDIS_URL"
     
-    python3 << EOF
+    "$PY" << EOF
 import sys
 import os
 import json
