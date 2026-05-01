@@ -5,10 +5,12 @@ Arq 任务客户端
 """
 
 import logging
-from typing import Optional
+import json
+from typing import Any, Dict, Optional
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.jobs import Job, JobStatus
 
 from config import settings
 
@@ -43,41 +45,34 @@ class TaskClient:
             self._pool = None
             logger.info("任务客户端已关闭")
     
-    async def submit_parse_task(
+    async def submit_bundle_task(
         self,
         case_id: str,
-        file_ids: list[str],
-        time_window_start: Optional[str] = None,
-        time_window_end: Optional[str] = None,
-        max_lines_per_file: Optional[int] = None,
+        upload_path: str,
+        upload_name: str,
     ) -> str:
-        """
-        提交日志解析任务
-        
-        Args:
-            case_id: 案例ID
-            file_ids: 待解析的日志文件ID列表
-            time_window_start: 时间窗口起始（ISO格式）
-            time_window_end: 时间窗口结束（ISO格式）
-            max_lines_per_file: 每个文件最大解析行数
-        
-        Returns:
-            str: 任务ID
-        """
+        """提交压缩包解析任务（解压/分类/对齐一体化）。"""
         if not self._pool:
             await self.initialize()
-        
+
         job = await self._pool.enqueue_job(
-            "parse_logs_task",
+            "parse_bundle_task",
             case_id,
-            file_ids,
-            time_window_start,
-            time_window_end,
-            max_lines_per_file,
+            upload_path,
+            upload_name,
         )
-        
         task_id = job.job_id
-        logger.info(f"已提交解析任务: {task_id}, Case: {case_id}, Files: {len(file_ids)}")
+        # 初始化进度，前端可立即轮询
+        await self._pool.set(
+            f"task_progress:{task_id}",
+            json.dumps({
+                "percent": 5,
+                "stage": "queued",
+                "message": "任务已入队，等待处理",
+            }, ensure_ascii=False),
+            ex=3600,
+        )
+        logger.info(f"已提交压缩包解析任务: {task_id}, Case: {case_id}, File: {upload_name}")
         return task_id
     
     async def get_task_status(self, task_id: str) -> dict:
@@ -93,51 +88,55 @@ class TaskClient:
         if not self._pool:
             await self.initialize()
         
-        job = await self._pool.get_job(task_id)
-        
-        if not job:
-            return {
-                "task_id": task_id,
-                "status": "not_found",
-                "message": "任务不存在或已过期",
-            }
-        
-        # 获取任务信息
-        job_info = await job.info()
-        
-        # 映射 Arq 状态到我们的状态
-        status_map = {
-            "queued": "pending",
-            "in_progress": "running",
-            "complete": "completed",
-            "not_found": "not_found",
+        # arq >= 0.25：用 Job(job_id, redis)，ArqRedis 上无 get_job
+        job = Job(task_id, self._pool)
+        arq_st = await job.status()
+
+        status_map: Dict[JobStatus, str] = {
+            JobStatus.queued: "pending",
+            JobStatus.deferred: "pending",
+            JobStatus.in_progress: "running",
+            JobStatus.complete: "completed",
+            JobStatus.not_found: "not_found",
         }
-        
-        arq_status = job_info.status if job_info else "not_found"
-        status = status_map.get(arq_status, "unknown")
-        
-        result = {
+        status = status_map.get(arq_st, "unknown")
+
+        job_info = await job.info()
+        result_info = await job.result_info()
+
+        start_time = result_info.start_time if result_info else None
+        finish_time = result_info.finish_time if result_info else None
+
+        result: Dict[str, Any] = {
             "task_id": task_id,
             "status": status,
             "enqueue_time": job_info.enqueue_time.isoformat() if job_info and job_info.enqueue_time else None,
-            "start_time": job_info.start_time.isoformat() if job_info and job_info.start_time else None,
-            "finish_time": job_info.finish_time.isoformat() if job_info and job_info.finish_time else None,
+            "start_time": start_time.isoformat() if start_time else None,
+            "finish_time": finish_time.isoformat() if finish_time else None,
         }
-        
-        # 如果任务完成，获取结果
-        if status == "completed":
+        progress_raw = await self._pool.get(f"task_progress:{task_id}")
+        if progress_raw:
             try:
-                task_result = await job.result()
-                result["result"] = task_result
+                if isinstance(progress_raw, bytes):
+                    progress_raw = progress_raw.decode("utf-8")
+                result["progress"] = json.loads(progress_raw)
+            except Exception:  # noqa: BLE001
+                pass
+
+        if arq_st == JobStatus.complete and result_info is not None:
+            if result_info.success:
+                result["result"] = result_info.result
+            else:
+                result["status"] = "failed"
+                err = result_info.result
+                result["error"] = str(err) if err is not None else "task failed"
+        elif arq_st == JobStatus.complete:
+            try:
+                result["result"] = await job.result(timeout=5.0)
             except Exception as e:
                 logger.error(f"获取任务结果失败 {task_id}: {str(e)}")
                 result["error"] = str(e)
-        
-        # 如果任务失败，获取错误信息
-        if job_info and job_info.result and isinstance(job_info.result, Exception):
-            result["status"] = "failed"
-            result["error"] = str(job_info.result)
-        
+
         return result
     
     async def cancel_task(self, task_id: str) -> bool:
@@ -153,12 +152,11 @@ class TaskClient:
         if not self._pool:
             await self.initialize()
         
-        job = await self._pool.get_job(task_id)
-        
-        if not job:
+        job = Job(task_id, self._pool)
+        if await job.status() == JobStatus.not_found:
             logger.warning(f"任务不存在: {task_id}")
             return False
-        
+
         try:
             await job.abort()
             logger.info(f"已取消任务: {task_id}")

@@ -1,0 +1,123 @@
+# Important event extraction rules.
+# Each rule fires when *any* listed pattern matches; multiple matches per line are allowed.
+# Patterns:
+#   - regex:        Python regex; named groups (?P<name>...) feed `fields` via from_group
+#   - keyword_all:  list of words that must ALL appear in the line (case-insensitive substring)
+#   - keyword_any:  list of words; ANY match fires (compiled into a regex internally)
+#
+# Use bounded `.{0,N}` (not unbounded `.*`) to prevent backtracking on long lines.
+events:
+  - type: system_reboot
+    applies_to: [android, mcu, kernel, tbox, fota]
+    patterns:
+      - regex: '(?i)\b(reboot|restart|rebooting)\b'
+    fields:
+      reason: { regex: 'reason=([\w-]+)' }
+
+  - type: system_boot
+    applies_to: [android, mcu, kernel, tbox, fota]
+    patterns:
+      - regex: '(?i)\b(boot completed|system started|init done|booting linux)\b'
+
+  - type: fota_notify
+    applies_to: [android, fota, tbox]
+    patterns:
+      # OTA package available — high-signal, low-noise wording
+      - regex: '(?i)\bota\b.{0,20}\bavailable\b'
+      - keyword_any: ["FOTA notify", "fota_notify", "ota notification"]
+
+  - type: fota_download_start
+    applies_to: [android, fota, tbox]
+    patterns:
+      # words frequently appear inside identifiers like FotaDownloadCenter so we
+      # use an unordered all-words match rather than `\bFOTA\b` which won't fit
+      - keyword_all: [fota, download, start]
+      - keyword_any: ["start downloading", "start to download"]
+
+  - type: fota_install_start
+    applies_to: [android, fota, mcu, tbox]
+    patterns:
+      - keyword_any: ["install start", "begin install", "start install", "start flashing"]
+
+  - type: fota_install_success
+    applies_to: [android, fota, mcu, tbox]
+    patterns:
+      - keyword_any: ["install success", "install complete", "flash done", "fota success"]
+
+  - type: fota_install_failure
+    applies_to: [android, fota, mcu, tbox]
+    patterns:
+      - regex: '(?i)\b(?:fota|install)\b.{0,40}\b(?:fail|failed|abort)\b'
+
+  - type: gear_shift
+    applies_to: [mcu]
+    patterns:
+      - regex: 'GEAR\s*->\s*(?P<gear>[PRND])\b'
+    fields:
+      gear: { from_group: gear }
+
+  - type: door_open
+    applies_to: [mcu]
+    patterns:
+      - regex: 'DOOR_(?P<door>FL|FR|RL|RR|TRUNK)_OPEN'
+    fields:
+      door: { from_group: door }
+
+  - type: door_close
+    applies_to: [mcu]
+    patterns:
+      - regex: 'DOOR_(?P<door>FL|FR|RL|RR|TRUNK)_CLOSE'
+    fields:
+      door: { from_group: door }
+
+  - type: charging_start
+    applies_to: [mcu, tbox]
+    patterns:
+      - keyword_any: ["charging started", "CHG_START", "charge_begin"]
+
+  - type: charging_end
+    applies_to: [mcu, tbox]
+    patterns:
+      - keyword_any: ["charging stopped", "CHG_END", "charge_complete"]
+
+  - type: brake_event
+    applies_to: [mcu]
+    patterns:
+      - regex: '(?i)brake.{0,10}\bpressed\b|EBS\s+active'
+
+  - type: vehicle_unlock
+    applies_to: [tbox, mcu]
+    patterns:
+      - keyword_any: ["UNLOCK_OK", "vehicle unlock"]
+
+  - type: vehicle_lock
+    applies_to: [tbox, mcu]
+    patterns:
+      - keyword_any: ["LOCK_OK", "vehicle locked"]
+
+  - type: panic_or_fatal
+    applies_to: [android, mcu, kernel, tbox, fota]
+    patterns:
+      - regex: '(?i)\b(?:kernel\s+panic|fatal\s+exception|oom-killer\s+invoked|kernel\s+bug)\b'
+
+  - type: kernel_call_trace
+    applies_to: [kernel]
+    patterns:
+      # dmesg output is prefixed by ``[<sec>.<usec>] `` so we can't anchor at line start.
+      - regex: '(?i)\bCall\s+trace:\s*$'
+
+  - type: kernel_oops_or_bug
+    applies_to: [kernel]
+    patterns:
+      - regex: '(?i)\b(?:Oops|BUG|Internal\s+error)\s*[: ]'
+
+  - type: kernel_watchdog
+    applies_to: [kernel]
+    patterns:
+      - keyword_any: ["watchdog", "WDOG", "wdt:"]
+
+  - type: kernel_warning
+    applies_to: [kernel]
+    patterns:
+      # canonical ``WARN_ON`` printout: ``WARNING: CPU: 5 PID: 92 at <site> ...``
+      - regex: '\bWARNING:\s+CPU:\s*\d+\s+PID:\s*\d+\s+at\s+'

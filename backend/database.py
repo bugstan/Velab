@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncGenerator, Generator, List, Optional
 import logging
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
@@ -169,7 +169,10 @@ class DatabaseManager:
         """创建所有表(同步)"""
         if not self._initialized:
             raise RuntimeError("数据库未初始化,请先调用initialize()")
-        
+
+        with self._engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            conn.commit()
         Base.metadata.create_all(bind=self._engine)
         logger.info("数据库表创建成功")
     
@@ -177,8 +180,9 @@ class DatabaseManager:
         """创建所有表(异步)"""
         if not self._initialized:
             raise RuntimeError("数据库未初始化,请先调用initialize()")
-        
+
         async with self._async_engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
             await conn.run_sync(Base.metadata.create_all)
         logger.info("数据库表创建成功(异步)")
     

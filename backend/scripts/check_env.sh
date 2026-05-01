@@ -22,6 +22,12 @@ SILENT=false
 EXIT_CODE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=lib/common.sh
+# shellcheck disable=SC1090
+source "$SCRIPT_DIR/lib/common.sh"
+velab_path_prepend_brew
+velab_bootstrap_venv "$BACKEND_DIR"
+PY="${VELAB_PYTHON:-python3}"
 
 # ============================================================================
 # 辅助函数
@@ -101,12 +107,12 @@ done
 check_python_version() {
     print_header "检查 Python 版本"
     
-    if ! command -v python3 &> /dev/null; then
-        print_error "未找到 python3 命令"
+    if ! "$PY" --version &> /dev/null; then
+        print_error "无法运行 Python: $PY（可创建: python3 -m venv .venv 或 venv）"
         return
     fi
-    
-    PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+
+    PYTHON_VERSION=$("$PY" --version 2>&1 | awk '{print $2}')
     print_info "检测到 Python 版本: $PYTHON_VERSION"
     
     PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
@@ -148,7 +154,7 @@ check_dependencies() {
     for entry in "${CRITICAL_PACKAGES[@]}"; do
         package="${entry%%:*}"
         module="${entry##*:}"
-        if python3 -c "import importlib.util; import sys; sys.exit(0 if importlib.util.find_spec('$module') else 1)" 2>/dev/null; then
+        if "$PY" -c "import importlib.util; import sys; sys.exit(0 if importlib.util.find_spec('$module') else 1)" 2>/dev/null; then
             print_info "✓ $package"
         else
             MISSING_PACKAGES+=("$package")
@@ -244,8 +250,8 @@ check_postgresql() {
     print_info "测试数据库连接..."
     
     # 使用 Python 测试连接（从 POSTGRES_* 变量拼接连接信息）
-    # 注意：if python3 << EOF 模式可绕过 set -e，使 Python 非零退出时走 else 分支而非终止脚本
-    if python3 << EOF
+    # 注意：if $PY << EOF 模式可绕过 set -e，使 Python 非零退出时走 else 分支而非终止脚本
+    if "$PY" << EOF
 import sys
 import os
 try:
@@ -292,7 +298,7 @@ check_redis() {
     
     print_info "测试 Redis 连接 ($REDIS_HOST_VAL:$REDIS_PORT_VAL)..."
     
-    if python3 << EOF
+    if "$PY" << EOF
 import sys
 import os
 try:
@@ -334,7 +340,7 @@ check_minio() {
     
     print_info "测试 MinIO 连接..."
     
-    if python3 << EOF
+    if "$PY" << EOF
 import sys
 import os
 try:

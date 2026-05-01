@@ -25,15 +25,72 @@ export interface ThinkingProcessData {
   isExpanded: boolean;
 }
 
+/** 与 log_pipeline bundle 摄取关联的快捷操作（在气泡内展示「查看状态」等） */
+export interface BundleAction {
+  label: string;
+  bundleId: string;
+  action?: "status" | "rangeQuery";
+}
+
+export interface TimeRangeSummary {
+  start?: number;
+  end?: number;
+}
+
+export interface UploadSummary {
+  bundleId: string;
+  fileName: string;
+  fileCount: number;
+  filesByController: Record<string, number>;
+  validTimeRangeByController: Record<string, TimeRangeSummary>;
+}
+
+export interface UploadFileProgress {
+  fileName: string;
+  status: "queued" | "uploading" | "processing" | "completed" | "failed";
+  percent: number;
+  stage: string;
+  message: string;
+  bundleId?: string;
+  error?: string;
+}
+
+export interface UploadProgressView {
+  active: boolean;
+  percent: number;
+  stage: string;
+  message: string;
+  files: UploadFileProgress[];
+}
+
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   thinking?: ThinkingProcessData;
   timestamp: Date;
   isStreaming?: boolean;
   sources?: SourceReference[];
   confidenceLevel?: string;
+  /** 有 bundle 摄取任务时在消息气泡内展示状态查询等按钮 */
+  bundleActions?: BundleAction[];
+  /** 上传解析完成后的结构化 summary（用于泳道图） */
+  uploadSummaries?: UploadSummary[];
+  /** 上传消息内联进度（上传和解析都在同一气泡中展示） */
+  uploadProgress?: UploadProgressView;
+  /** 系统消息的业务类型，用于区分不同系统反馈卡片 */
+  systemKind?: "upload_summary";
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+  titleSource: "default" | "auto" | "auto_optimized" | "manual";
+  titleAutoOptimized: boolean;
+  turnCount: number;
 }
 
 export interface SourceReference {

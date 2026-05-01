@@ -1,0 +1,40 @@
+# Anchor rules — used by alignment to compute clock offsets between controllers.
+# Each anchor type lists keyword/regex patterns and a base confidence (0..1).
+# Same Pattern types as events: regex / keyword_all / keyword_any.
+anchors:
+  - type: system_boot
+    applies_to: [android, mcu, kernel, tbox, fota]
+    confidence: 0.90
+    patterns:
+      - regex: '(?i)\b(boot completed|system started|init done|booting linux)\b'
+
+  - type: network_connected
+    applies_to: [android, fota, tbox]
+    confidence: 0.85
+    patterns:
+      - keyword_any: ["network connected", "wifi connected", "network is connected"]
+
+  - type: fota_download_start
+    applies_to: [android, fota, mcu, tbox]
+    confidence: 0.95
+    patterns:
+      - keyword_all: [fota, download, start]
+      - keyword_any: ["start downloading", "start to download"]
+
+  - type: fota_install_start
+    applies_to: [android, fota, mcu, tbox]
+    confidence: 0.95
+    patterns:
+      - keyword_any: ["install start", "begin install", "start install", "start flashing"]
+
+  - type: system_reboot
+    applies_to: [android, mcu, kernel, tbox, fota]
+    confidence: 0.90
+    patterns:
+      - regex: '(?i)\b(reboot|restart|rebooting)\b'
+
+  - type: tbox_clock_sync
+    applies_to: [tbox, mcu, kernel]
+    confidence: 0.98
+    patterns:
+      - keyword_any: ["rtc set hw", "time sync", "gps time", "ntp sync", "clock sync"]

@@ -1,251 +1,166 @@
 """
 Arq Worker 配置和任务定义
 
-本模块定义异步任务的具体实现和 Worker 配置。
+异步执行 log_pipeline 的 bundle 摄取（解压 → 分类 → 解码 → 预扫描 → 对齐 → 持久化）。
+进度同步回 Redis 的 ``task_progress:{task_id}`` 键，供前端轮询。
 """
 
+from __future__ import annotations
+
+import asyncio
+import json
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
+from pathlib import Path
+from uuid import UUID
 
 from arq import cron
 from arq.connections import RedisSettings
 
 from config import settings
-from database import db_manager
-from db_operations import BatchOperations
-from models.log_file import ParseStatus
-from services.event_normalizer import EventNormalizer
-from services.parser import parser_registry
-from services.time_alignment import TimeAlignmentService
+from log_pipeline.api.http import build_pipeline
+from log_pipeline.config import Settings as PipelineSettings
+from log_pipeline.interfaces import BundleStatus
 
 logger = logging.getLogger(__name__)
 
 
-async def parse_logs_task(
+def _set_task_progress_sync(redis, task_id: str, percent: int, stage: str, message: str) -> None:
+    """Synchronous wrapper used from inside a thread (asyncio.run_coroutine_threadsafe)."""
+    if not redis or not task_id:
+        return
+    payload = json.dumps(
+        {"percent": percent, "stage": stage, "message": message},
+        ensure_ascii=False,
+    )
+    coro = redis.set(f"task_progress:{task_id}", payload, ex=3600)
+    try:
+        asyncio.run_coroutine_threadsafe(coro, asyncio.get_event_loop()).result(timeout=2)
+    except Exception:  # noqa: BLE001
+        # progress reporting failures must never crash a long-running ingest
+        pass
+
+
+async def _set_task_progress(ctx, task_id: str, percent: int, stage: str, message: str) -> None:
+    redis = ctx.get("redis")
+    if not redis or not task_id:
+        return
+    payload = json.dumps(
+        {"percent": percent, "stage": stage, "message": message},
+        ensure_ascii=False,
+    )
+    await redis.set(f"task_progress:{task_id}", payload, ex=3600)
+
+
+_STATUS_TO_PCT = {
+    BundleStatus.QUEUED: 5,
+    BundleStatus.EXTRACTING: 10,
+    BundleStatus.DECODING: 40,
+    BundleStatus.PRESCANNING: 70,
+    BundleStatus.ALIGNING: 90,
+    BundleStatus.DONE: 100,
+    BundleStatus.FAILED: 100,
+}
+
+
+async def parse_bundle_task(
     ctx,
     case_id: str,
-    file_ids: list[str],
-    time_window_start: Optional[str] = None,
-    time_window_end: Optional[str] = None,
-    max_lines_per_file: Optional[int] = None,
+    upload_path: str,
+    upload_name: str,
 ) -> dict:
+    """压缩包摄取任务 — 委托给 log_pipeline.IngestPipeline.
+
+    ``case_id`` 仅用于审计日志/进度消息；不再写 PostgreSQL（log_pipeline 自管 SQLite catalog）。
     """
-    异步日志解析任务
-    
-    Args:
-        ctx: Arq 上下文对象
-        case_id: 案例ID
-        file_ids: 待解析的日志文件ID列表
-        time_window_start: 时间窗口起始（ISO格式）
-        time_window_end: 时间窗口结束（ISO格式）
-        max_lines_per_file: 每个文件最大解析行数
-    
-    Returns:
-        dict: 任务执行结果
-    """
-    logger.info(f"开始解析任务 - Case: {case_id}, Files: {len(file_ids)}")
-    
-    # 初始化数据库连接
-    db_manager.initialize()
-    
-    # 转换时间窗口
-    time_start = datetime.fromisoformat(time_window_start) if time_window_start else None
-    time_end = datetime.fromisoformat(time_window_end) if time_window_end else None
-    
-    total_events = 0
-    parsed_files = 0
-    failed_files = []
-    
+    task_id = ctx.get("job_id", "")
+    redis = ctx.get("redis")
+    await _set_task_progress(ctx, task_id, 5, "preparing", "开始处理上传包")
+
+    pipeline_settings = PipelineSettings.from_env()
+    pipeline = build_pipeline(pipeline_settings)
+
     try:
-        with db_manager.get_session() as db:
-            for file_id in file_ids:
+        # register_upload + run 都是同步方法（CPU/IO 密集）；用 to_thread 让出 event loop
+        bundle_id = await asyncio.to_thread(
+            pipeline.register_upload, Path(upload_path), upload_name
+        )
+        await _set_task_progress(
+            ctx, task_id, 10, "extracting",
+            f"开始解析 bundle={bundle_id} case_id={case_id}",
+        )
+
+        # 起一个轮询 task：定期把 catalog 中的 progress 同步到 Redis
+        async def _poll_progress() -> None:
+            while True:
+                await asyncio.sleep(1.0)
                 try:
-                    # 获取文件信息
-                    log_file = db.query(db_manager.models["RawLogFile"]).filter_by(file_id=file_id).first()
-                    if not log_file:
-                        logger.warning(f"文件不存在: {file_id}")
-                        failed_files.append({"file_id": file_id, "error": "文件不存在"})
+                    bundle = pipeline._catalog.get_bundle(bundle_id)
+                    if bundle is None:
                         continue
-                    
-                    # 更新状态为解析中
-                    BatchOperations.update_file_parse_status(db, file_id, ParseStatus.PARSING)
-                    
-                    # 获取对应的解析器
-                    parser = parser_registry.get_parser(log_file.source_type)
-                    if not parser:
-                        logger.error(f"未找到解析器: {log_file.source_type}")
-                        BatchOperations.update_file_parse_status(db, file_id, ParseStatus.FAILED)
-                        failed_files.append({"file_id": file_id, "error": f"不支持的日志类型: {log_file.source_type}"})
-                        continue
-                    
-                    # 解析日志文件
-                    events = list(parser.parse_file(
-                        file_path=log_file.file_path,
-                        case_id=case_id,
-                        time_window_start=time_start,
-                        time_window_end=time_end,
-                        max_lines=max_lines_per_file
-                    ))
-                    
-                    if not events:
-                        logger.warning(f"文件无有效事件: {file_id}")
-                        BatchOperations.update_file_parse_status(db, file_id, ParseStatus.PARSED)
-                        continue
-                    
-                    # 标准化事件
-                    normalizer = EventNormalizer()
-                    normalized_events = [normalizer.normalize(event) for event in events]
-                    
-                    # 转换为字典格式
-                    event_dicts = [
-                        {
-                            "event_id": event.event_id,
-                            "case_id": event.case_id,
-                            "file_id": event.file_id,
-                            "source_type": event.source_type,
-                            "raw_ts": event.raw_ts,
-                            "normalized_ts": event.normalized_ts,
-                            "event_type": event.event_type,
-                            "level": event.level,
-                            "module": event.module,
-                            "message": event.message,
-                            "raw_line": event.raw_line,
-                            "line_number": event.line_number,
-                            "metadata": event.metadata,
-                        }
-                        for event in normalized_events
-                    ]
-                    
-                    # 批量插入事件
-                    inserted_count = BatchOperations.bulk_insert_events(db, event_dicts)
-                    total_events += inserted_count
-                    
-                    # 更新文件状态为已解析
-                    BatchOperations.update_file_parse_status(db, file_id, ParseStatus.PARSED)
-                    parsed_files += 1
-                    
-                    logger.info(f"文件解析完成: {file_id}, 事件数: {inserted_count}")
-                    
-                except Exception as e:
-                    logger.error(f"解析文件失败 {file_id}: {str(e)}", exc_info=True)
-                    BatchOperations.update_file_parse_status(db, file_id, ParseStatus.FAILED)
-                    failed_files.append({"file_id": file_id, "error": str(e)})
-            
-            # 如果有成功解析的文件，执行时间对齐
-            if parsed_files > 0:
-                try:
-                    logger.info(f"开始时间对齐 - Case: {case_id}")
-                    alignment_service = TimeAlignmentService()
-                    
-                    # 获取该案例的所有事件
-                    events_query = db.query(db_manager.models["DiagnosisEvent"]).filter_by(case_id=case_id)
-                    all_events = events_query.all()
-                    
-                    if all_events:
-                        # 转换为 ParsedEvent 对象
-                        from services.parser.base import ParsedEvent, EventLevel, EventType
-                        parsed_events = [
-                            ParsedEvent(
-                                event_id=e.event_id,
-                                case_id=e.case_id,
-                                file_id=e.file_id,
-                                source_type=e.source_type,
-                                raw_ts=e.raw_ts,
-                                normalized_ts=e.normalized_ts,
-                                event_type=EventType(e.event_type),
-                                level=EventLevel(e.level),
-                                module=e.module,
-                                message=e.message,
-                                raw_line=e.raw_line,
-                                line_number=e.line_number,
-                                metadata=e.metadata or {}
-                            )
-                            for e in all_events
-                        ]
-                        
-                        # 执行时间对齐
-                        alignment_result = alignment_service.align_events(parsed_events)
-                        
-                        # 批量更新对齐后的时间戳
-                        updates = [
-                            {
-                                "event_id": event.event_id,
-                                "normalized_ts": alignment_result.get_normalized_timestamp(
-                                    event.source_type,
-                                    event.raw_ts
-                                )
-                            }
-                            for event in parsed_events
-                        ]
-                        
-                        BatchOperations.bulk_update_event_timestamps(db, updates)
-                        logger.info(f"时间对齐完成 - Case: {case_id}, 状态: {alignment_result.status}")
-                        
-                except Exception as e:
-                    logger.error(f"时间对齐失败 - Case: {case_id}: {str(e)}", exc_info=True)
-        
-        result = {
-            "case_id": case_id,
-            "total_files": len(file_ids),
-            "parsed_files": parsed_files,
-            "failed_files": len(failed_files),
-            "total_events": total_events,
-            "failures": failed_files,
-            "status": "completed" if not failed_files else "partial_success",
-        }
-        
-        logger.info(f"解析任务完成 - {result}")
-        return result
-        
-    except Exception as e:
-        logger.error(f"解析任务失败 - Case: {case_id}: {str(e)}", exc_info=True)
+                    status_str = bundle["status"]
+                    progress = bundle.get("progress") or 0.0
+                    percent = int(progress * 100)
+                    await _set_task_progress(ctx, task_id, percent, status_str, "处理中")
+                    if status_str in (BundleStatus.DONE.value, BundleStatus.FAILED.value):
+                        return
+                except Exception:  # noqa: BLE001
+                    pass
+
+        poll_task = asyncio.create_task(_poll_progress())
+
+        try:
+            result = await asyncio.to_thread(pipeline.run, bundle_id, Path(upload_path))
+        finally:
+            poll_task.cancel()
+            try:
+                await poll_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        bundle_row = pipeline._catalog.get_bundle(bundle_id)
+        await _set_task_progress(ctx, task_id, 100, "completed", "处理完成")
+
         return {
             "case_id": case_id,
-            "status": "failed",
-            "error": str(e),
+            "bundle_id": str(bundle_id),
+            "uploaded_file": upload_name,
+            "status": "completed" if bundle_row and bundle_row["status"] == "done" else "partial_success",
+            "total_files": result.get("total_files", 0),
+            "dedup_skipped": result.get("dedup_skipped", 0),
+            "per_controller": result.get("per_controller", {}),
+            "decode_counts": result.get("decode_counts", {}),
+            "prescan_counts": result.get("prescan_counts", {}),
+            "alignment": result.get("alignment", {}),
         }
+
+    except Exception as e:
+        await _set_task_progress(ctx, task_id, 100, "failed", f"处理失败: {e}")
+        logger.error("bundle ingest failed - case=%s err=%s", case_id, e, exc_info=True)
+        return {"case_id": case_id, "status": "failed", "error": str(e)}
     finally:
-        db_manager.close()
+        # 上传文件已被 pipeline.run 删除，但兜底再清一次
+        try:
+            Path(upload_path).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 async def cleanup_old_tasks(ctx):
-    """
-    定期清理过期任务记录（示例定时任务）
-    
-    Args:
-        ctx: Arq 上下文对象
-    """
-    logger.info("执行定时清理任务")
-    # 这里可以添加清理逻辑，例如删除30天前的任务记录
+    """定时清理（占位）。"""
+    logger.info("cleanup tick")
     return {"cleaned": 0}
 
 
 class WorkerSettings:
-    """
-    Arq Worker 配置类
-    
-    定义 Redis 连接、任务函数、重试策略等配置。
-    """
-    # Redis 连接配置
+    """Arq Worker 配置。"""
     redis_settings = RedisSettings(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
     )
-    
-    # 注册的任务函数
-    functions = [parse_logs_task]
-    
-    # 定时任务（可选）
-    cron_jobs = [
-        cron(cleanup_old_tasks, hour=2, minute=0),  # 每天凌晨2点执行清理
-    ]
-    
-    # Worker 配置
-    max_jobs = 10  # 最大并发任务数
-    job_timeout = 3600  # 任务超时时间（秒）
-    keep_result = 86400  # 保留任务结果时间（秒）
-    
-    # 重试配置
-    max_tries = 3  # 最大重试次数
-    retry_jobs = True  # 启用失败重试
+    functions = [parse_bundle_task]
+    cron_jobs = [cron(cleanup_old_tasks, hour=2, minute=0)]
+    max_jobs = 10
+    job_timeout = 3600
+    keep_result = 86400
+    max_tries = 3
+    retry_jobs = True

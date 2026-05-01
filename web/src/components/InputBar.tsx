@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 interface InputBarProps {
   onSend: (message: string) => void;
   isRunning: boolean;
   onStop: () => void;
+  onUploadFiles: (files: FileList | File[]) => Promise<void>;
 }
 
-export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
+export default function InputBar({ onSend, isRunning, onStop, onUploadFiles }: InputBarProps) {
   const [input, setInput] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,19 +22,35 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
     }
   }
 
+  async function handleFiles(files: FileList | File[]) {
+    if (!files || files.length === 0) return;
+    await onUploadFiles(files);
+  }
+
   return (
     <div
       style={{
-        position: "sticky",
-        bottom: 0,
         width: "100%",
         padding: "8px 16px 16px",
         background: "var(--bg-primary)",
-        zIndex: 100,
+        borderTop: "1px solid var(--border-color)",
       }}
     >
       <form
         onSubmit={handleSubmit}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+        }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setIsDragging(false);
+          await handleFiles(e.dataTransfer.files);
+        }}
         style={{
           maxWidth: "48rem",
           margin: "0 auto",
@@ -42,11 +61,25 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
           border: "1px solid var(--border-color)",
           background: "var(--bg-input)",
           padding: "8px 12px",
+          border: isDragging ? "1px solid var(--accent-blue)" : "1px solid var(--border-color)",
         }}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: "none" }}
+          onChange={async (e) => {
+            const input = e.currentTarget;
+            const files = input.files;
+            if (files) await handleFiles(files);
+            input.value = "";
+          }}
+        />
         {/* + button */}
         <button
           type="button"
+          onClick={() => fileInputRef.current?.click()}
           style={{
             flexShrink: 0,
             width: 32,
@@ -86,6 +119,7 @@ export default function InputBar({ onSend, isRunning, onStop }: InputBarProps) {
         {/* attachment icon */}
         <button
           type="button"
+            onClick={() => fileInputRef.current?.click()}
           style={{
             flexShrink: 0,
             width: 32,

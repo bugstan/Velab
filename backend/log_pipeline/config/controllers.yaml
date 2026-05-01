@@ -1,0 +1,103 @@
+controllers:
+  - type: tbox
+    description: 网关 / Tbox 域。包含 DLT 二进制 trace 与 activelog 文本。
+    path_patterns:
+      - "**/网关&Tbox日志/**"
+      - "**/tbox/**"
+      - "**/TBOX/**"
+    name_patterns:
+      - "*.dlt"
+      - "dlt_offlinetrace.*"
+      - "activelog_*"
+      - "tbox*.log"
+      - "tbox*.txt"
+    content_signatures:
+      - magic_bytes: "DLT\x01"
+      - regex: "^\\[TBOX\\]"
+
+  - type: fota
+    description: FOTA HMI 与 FOTA service 文本日志（Java logback 风格）。
+    path_patterns:
+      - "**/娱乐系统日志/fota/**"
+      - "**/fota/**"
+      - "**/FOTA/**"
+    name_patterns:
+      - "fotaHMI_*.log"
+      - "fota*.log"
+      - "fotapackage.db"
+      - "flash_id.txt"
+    content_signatures:
+      - regex: "^\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}.*\\[FOTA"
+
+  - type: kernel
+    description: 内核域日志，含 dmesg（[sec.usec] 格式）与 IVI 内核 logcat 格式。
+    path_patterns:
+      - "**/娱乐系统日志/kernel/**"
+      - "**/娱乐系统日志/kernel_logs/**"
+      - "**/kernel/**"
+      - "**/kernel_logs/**"
+    name_patterns:
+      - "kernel*.log"
+      - "kernel_*.zip"
+      - "dmesg*"
+      - "[0-9]*_[0-9]*-*-*_*-*-*.log"
+    content_signatures:
+      - regex: "^\\[\\s*\\d+\\.\\d+\\]"
+
+  - type: android
+    description: Android logcat 主日志（saicmaxus*.log）与压缩归档（saicmaxusLog_*.zip）。
+    path_patterns:
+      - "**/娱乐系统日志/android/**"
+      - "**/android/**"
+      - "**/sys_log/**"
+    name_patterns:
+      - "saicmaxus*.log*"
+      - "saicmaxusLog_*.zip"
+      - "logcat*"
+      - "main*.log"
+      - "event-log-tags"
+    content_signatures:
+      - regex: "^\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3,6}\\s+\\d+\\s+\\d+\\s+[VDIWEF]\\s+"
+
+  - type: mcu
+    description: |
+      MCU / 整车控制器文本日志。样本中位于 ``网关&Tbox日志/.../mcu/...``，
+      行格式 ``&<tick_ms> <SEV>@<MOD>:<msg>``，tick_ms 为本次启动毫秒计数；
+      含 60 秒一次的 ``Set Date By Second: <epoch_2020>, ...`` 校时报文，
+      用于推算 boot wall-clock。
+    path_patterns:
+      - "**/mcu/**"
+      - "**/MCU/**"
+      - "**/整车控制器/**"
+    name_patterns:
+      - "mcu*.log"
+      - "mcu*.txt"
+      - "MCU_[0-9]*_[0-9]*.txt"
+    content_signatures:
+      - regex: "^&\\d+\\s+(?:INF|WRN|ERR|DBG)@"
+
+  - type: ibdu
+    description: |
+      iBDU 底层调试日志（hex + ASCII 混合）。位于 ``网关&Tbox日志/.../iBDU/...``，
+      行格式 ``[YYYY.MM.DD HH:MM:SS.mmm]<payload>``，payload 含 hex 字节流；
+      解码阶段把可打印 hex 段还原为 ASCII，写到 .decoded.log。
+    path_patterns:
+      - "**/iBDU/**"
+      - "**/ibdu/**"
+    name_patterns:
+      - "iBDU_[0-9]*_[0-9]*.txt"
+      - "ibdu_*.log"
+    content_signatures:
+      - regex: "^\\[\\d{4}\\.\\d{2}\\.\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\]"
+
+priority_order:
+  # MCU and iBDU paths sit *under* ``网关&Tbox日志/`` so they must out-rank tbox,
+  # otherwise tbox's broader ``**/网关&Tbox日志/**`` would steal those files.
+  - ibdu
+  - mcu
+  - tbox
+  - fota
+  - kernel
+  - android
+
+content_sniff_bytes: 8192

@@ -28,6 +28,52 @@ describe('ChatMessage Component', () => {
             const messageDiv = container.querySelector('.justify-end')
             expect(messageDiv).toBeInTheDocument()
         })
+
+        it('用户上传消息不应渲染 Summary 卡片', () => {
+            const uploadLikeMessage = {
+                ...mockUserMessage,
+                uploadSummaries: [
+                    {
+                        bundleId: 'bundle-1',
+                        fileName: 'logs.zip',
+                        fileCount: 3,
+                        filesByController: { tbox: 2, mcu: 1 },
+                        validTimeRangeByController: {
+                            tbox: { start: 1712044800, end: 1712048400 },
+                            mcu: { start: 1712044860, end: 1712048300 },
+                        },
+                    },
+                ],
+            }
+
+            render(<ChatMessageComponent message={uploadLikeMessage} />)
+            expect(screen.queryByText(/上传 Summary/)).not.toBeInTheDocument()
+        })
+
+        it('上传完成后应隐藏文件明细且不显示展开按钮', () => {
+            const completedUploadMessage = {
+                ...mockUserMessage,
+                uploadProgress: {
+                    active: false,
+                    percent: 100,
+                    stage: '处理完成',
+                    message: '上传和解析流程已结束',
+                    files: [
+                        {
+                            fileName: 'raw_logs_quick.zip',
+                            status: 'completed' as const,
+                            percent: 100,
+                            stage: '处理完成',
+                            message: '上传与解析完成',
+                        },
+                    ],
+                },
+            }
+
+            render(<ChatMessageComponent message={completedUploadMessage} />)
+            expect(screen.queryByText('raw_logs_quick.zip')).not.toBeInTheDocument()
+            expect(screen.queryByRole('button', { name: /展开文件明细|收起文件明细/ })).not.toBeInTheDocument()
+        })
     })
 
     describe('助手消息渲染', () => {
@@ -48,6 +94,21 @@ describe('ChatMessage Component', () => {
 
             const avatar = container.querySelector('svg')
             expect(avatar).toBeInTheDocument()
+        })
+    })
+
+    describe('系统消息渲染', () => {
+        it('应该渲染系统反馈标题与内容', () => {
+            const systemMessage = {
+                ...mockAssistantMessage,
+                role: 'system' as const,
+                content: '日志上传汇总',
+                uploadSummaries: [],
+            }
+
+            render(<ChatMessageComponent message={systemMessage} />)
+            expect(screen.getByText('系统反馈')).toBeInTheDocument()
+            expect(screen.getByText('日志上传汇总')).toBeInTheDocument()
         })
     })
 

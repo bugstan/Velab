@@ -12,6 +12,7 @@ import { vi, describe, it, beforeEach, expect } from 'vitest'
 describe('InputBar Component', () => {
     const mockOnSend = vi.fn()
     const mockOnStop = vi.fn()
+    const mockOnUploadFiles = vi.fn(async () => undefined)
 
     beforeEach(() => {
         vi.clearAllMocks()
@@ -298,6 +299,58 @@ describe('InputBar Component', () => {
             fireEvent.submit(form)
 
             expect(mockOnSend).toHaveBeenCalledWith(unicodeMessage)
+        })
+
+        it('拖拽文件到输入区时应触发上传', async () => {
+            const { container } = render(
+                <InputBar
+                    onSend={mockOnSend}
+                    isRunning={false}
+                    onStop={mockOnStop}
+                    onUploadFiles={mockOnUploadFiles}
+                />
+            )
+
+            const form = container.querySelector('form')
+            expect(form).toBeInTheDocument()
+
+            const file = new File(['hello'], 'demo.log', { type: 'text/plain' })
+            const dataTransfer = {
+                files: [file],
+            } as unknown as DataTransfer
+
+            fireEvent.dragOver(form!)
+            fireEvent.dragLeave(form!)
+            fireEvent.drop(form!, { dataTransfer })
+
+            await waitFor(() => {
+                expect(mockOnUploadFiles).toHaveBeenCalledTimes(1)
+                expect(mockOnUploadFiles).toHaveBeenCalledWith(dataTransfer.files)
+            })
+        })
+
+        it('文件选择变化应触发上传，空文件不触发', async () => {
+            const { container } = render(
+                <InputBar
+                    onSend={mockOnSend}
+                    isRunning={false}
+                    onStop={mockOnStop}
+                    onUploadFiles={mockOnUploadFiles}
+                />
+            )
+
+            const hiddenInput = container.querySelector('input[type="file"]') as HTMLInputElement
+            expect(hiddenInput).toBeInTheDocument()
+
+            const file = new File(['content'], 'upload.zip', { type: 'application/zip' })
+            fireEvent.change(hiddenInput, { target: { files: [file] } })
+
+            await waitFor(() => {
+                expect(mockOnUploadFiles).toHaveBeenCalledTimes(1)
+            })
+
+            fireEvent.change(hiddenInput, { target: { files: [] } })
+            expect(mockOnUploadFiles).toHaveBeenCalledTimes(1)
         })
     })
 })

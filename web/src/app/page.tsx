@@ -20,18 +20,120 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Header from "@/components/Header";
 import WelcomePage from "@/components/WelcomePage";
 import InputBar from "@/components/InputBar";
 import ChatMessageComponent from "@/components/ChatMessage";
+import SessionSidebar from "@/components/SessionSidebar";
 import {
   DemoScenario,
   DEMO_SCENARIOS,
+  ChatSession,
   ChatMessage,
   AgentStep,
+  UploadSummary,
 } from "@/lib/types";
 import { parseSSEBuffer } from "@/lib/sseParse";
+import { getBundleStageLabel } from "@/lib/bundleStatus";
+
+const MAX_STATUS_POLL_SECONDS = 600;
+const MAX_STATUS_ERROR_RETRIES = 5;
+const DRAFT_SESSION_ID = "__draft__";
+const ACTIVE_SESSION_STORAGE_KEY = "fota_active_session_id";
+
+const createSessionId = (): string =>
+  `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const deriveSessionTitle = (messages: ChatMessage[]): string => {
+  const firstUserMsg = messages.find((m) => m.role === "user" && m.content.trim().length > 0);
+  if (!firstUserMsg) return "新会话";
+  const normalized = firstUserMsg.content.replace(/\s+/g, " ").trim();
+  return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
+};
+
+const createEmptySession = (id?: string): ChatSession => {
+  const now = new Date();
+  return {
+    id: id ?? createSessionId(),
+    title: "新会话",
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+    titleSource: "default",
+    titleAutoOptimized: false,
+    turnCount: 0,
+  };
+};
+
+type SessionTitleApiResponse = {
+  title?: string;
+};
+
+type PersistedChatMessage = Omit<ChatMessage, "timestamp"> & {
+  timestamp: string;
+};
+
+type PersistedChatSession = Omit<ChatSession, "messages" | "createdAt" | "updatedAt"> & {
+  messages: PersistedChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+const parseDateOrNow = (value: unknown): Date => {
+  if (typeof value === "string" || value instanceof Date) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date();
+};
+
+const deserializeSession = (raw: unknown): ChatSession | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw as Partial<PersistedChatSession>;
+  if (!candidate.id || typeof candidate.id !== "string") return null;
+  const messages = Array.isArray(candidate.messages)
+    ? candidate.messages.map((msg): ChatMessage => ({
+        ...msg,
+        timestamp: parseDateOrNow(msg.timestamp),
+      }))
+    : [];
+
+  const titleSource = candidate.titleSource;
+  const normalizedTitleSource: ChatSession["titleSource"] =
+    titleSource === "auto"
+    || titleSource === "auto_optimized"
+    || titleSource === "manual"
+      ? titleSource
+      : "default";
+
+  return {
+    id: candidate.id,
+    title: typeof candidate.title === "string" && candidate.title.trim()
+      ? candidate.title
+      : "新会话",
+    messages,
+    createdAt: parseDateOrNow(candidate.createdAt),
+    updatedAt: parseDateOrNow(candidate.updatedAt),
+    titleSource: normalizedTitleSource,
+    titleAutoOptimized: Boolean(candidate.titleAutoOptimized),
+    turnCount: typeof candidate.turnCount === "number" ? candidate.turnCount : 0,
+  };
+};
+
+const serializeSession = (session: ChatSession): PersistedChatSession => ({
+  id: session.id,
+  title: session.title,
+  messages: session.messages.map((msg) => ({
+    ...msg,
+    timestamp: msg.timestamp.toISOString(),
+  })),
+  createdAt: session.createdAt.toISOString(),
+  updatedAt: session.updatedAt.toISOString(),
+  titleSource: session.titleSource,
+  titleAutoOptimized: session.titleAutoOptimized,
+  turnCount: session.turnCount,
+});
 
 
 /**
@@ -62,26 +164,442 @@ export default function Home() {
   const [currentScenario, setCurrentScenario] = useState<DemoScenario>(
     DEMO_SCENARIOS[0]
   );
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [draftSession, setDraftSession] = useState<ChatSession>(() =>
+    createEmptySession(DRAFT_SESSION_ID)
+  );
+  const [activeSessionId, setActiveSessionId] = useState<string>(DRAFT_SESSION_ID);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollContainerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sessionsRef = useRef<ChatSession[]>(sessions);
+  const draftRef = useRef<ChatSession>(draftSession);
+  const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const resumedPollingKeysRef = useRef<Set<string>>(new Set());
+  const [isHydrated, setIsHydrated] = useState(false);
+  const activeSession = useMemo(
+    () => (
+      activeSessionId === DRAFT_SESSION_ID
+        ? draftSession
+        : sessions.find((s) => s.id === activeSessionId) ?? draftSession
+    ),
+    [activeSessionId, draftSession, sessions]
+  );
+  const activeMessages = useMemo(
+    () => activeSession?.messages ?? [],
+    [activeSession]
+  );
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    if (!shouldAutoScrollRef.current) return;
+    messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
+
+  const updateConversation = useCallback(
+    (
+      sessionId: string,
+      updater: (current: ChatSession) => ChatSession
+    ) => {
+      if (sessionId === DRAFT_SESSION_ID) {
+        setDraftSession((prev) => updater(prev));
+        return;
+      }
+      setSessions((prev) => prev.map((session) => (session.id === sessionId ? updater(session) : session)));
+    },
+    []
+  );
+
+  const updateSessionMessages = useCallback(
+    (sessionId: string, updater: (current: ChatMessage[]) => ChatMessage[]) => {
+      updateConversation(sessionId, (session) => {
+        const nextMessages = updater(session.messages);
+        return {
+          ...session,
+          messages: nextMessages,
+          title:
+            session.titleSource === "default" && nextMessages.length > 0
+              ? deriveSessionTitle(nextMessages)
+              : session.title,
+          updatedAt: new Date(),
+        };
+      });
+    },
+    [updateConversation]
+  );
+
+  const getConversationSnapshot = useCallback(
+    (sessionId: string): ChatSession | undefined => {
+      if (sessionId === DRAFT_SESSION_ID) return draftRef.current;
+      return sessionsRef.current.find((s) => s.id === sessionId);
+    },
+    []
+  );
+
+  const persistSessionSnapshot = useCallback(async (sessionId: string) => {
+    if (sessionId === DRAFT_SESSION_ID) return;
+    const snapshot = getConversationSnapshot(sessionId);
+    if (!snapshot) return;
+    try {
+      await fetch(`/api/sessions/${sessionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(serializeSession(snapshot)),
+      });
+    } catch {
+      // 持久化失败不打断主流程，下一次状态变化会继续尝试
+    }
+  }, [getConversationSnapshot]);
+
+  const schedulePersistSession = useCallback((sessionId: string, delayMs = 1200) => {
+    if (!isHydrated || sessionId === DRAFT_SESSION_ID) return;
+    const existing = saveTimersRef.current[sessionId];
+    if (existing) {
+      return;
+    }
+    saveTimersRef.current[sessionId] = setTimeout(() => {
+      void persistSessionSnapshot(sessionId);
+      delete saveTimersRef.current[sessionId];
+    }, delayMs);
+  }, [isHydrated, persistSessionSnapshot]);
+
+  const patchUploadFileProgress = useCallback((
+    sessionId: string,
+    uploadMessageId: string,
+    fileName: string,
+    patch: Partial<NonNullable<ChatMessage["uploadProgress"]>["files"][number]>,
+    uploadPatch?: Partial<NonNullable<ChatMessage["uploadProgress"]>>
+  ) => {
+    updateSessionMessages(sessionId, (prev) =>
+      prev.map((message) => {
+        if (message.id !== uploadMessageId || !message.uploadProgress) return message;
+        const nextFiles = message.uploadProgress.files.map((file) =>
+          file.fileName === fileName ? { ...file, ...patch } : file
+        );
+        const percent = nextFiles.length > 0
+          ? Math.round(nextFiles.reduce((sum, file) => sum + file.percent, 0) / nextFiles.length)
+          : message.uploadProgress.percent;
+        const allTerminal = nextFiles.every((file) => file.status === "completed" || file.status === "failed");
+        const hasFailed = nextFiles.some((file) => file.status === "failed");
+        return {
+          ...message,
+          uploadProgress: {
+            ...message.uploadProgress,
+            ...(uploadPatch ?? {}),
+            files: nextFiles,
+            percent,
+            active: allTerminal ? false : (uploadPatch?.active ?? message.uploadProgress.active),
+            stage: allTerminal
+              ? (hasFailed ? "处理结束（含失败）" : "处理完成")
+              : (uploadPatch?.stage ?? message.uploadProgress.stage),
+            message: allTerminal
+              ? (hasFailed ? "上传和解析结束，部分文件失败" : "上传和解析流程已结束")
+              : (uploadPatch?.message ?? message.uploadProgress.message),
+          },
+        };
+      })
+    );
+  }, [updateSessionMessages]);
+
+  const ensureActiveSession = useCallback((): string => {
+    if (activeSessionId !== DRAFT_SESSION_ID) return activeSessionId;
+    const nextSession: ChatSession = {
+      ...draftRef.current,
+      id: createSessionId(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    setSessions((prev) => [nextSession, ...prev]);
+    setActiveSessionId(nextSession.id);
+    setDraftSession(createEmptySession(DRAFT_SESSION_ID));
+    return nextSession.id;
+  }, [activeSessionId]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [activeMessages, scrollToBottom]);
+
+  useEffect(() => {
+    const container = chatScrollContainerRef.current;
+    if (!container) return;
+
+    const updateAutoScrollFlag = () => {
+      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      shouldAutoScrollRef.current = distanceToBottom <= 80;
+    };
+
+    updateAutoScrollFlag();
+    container.addEventListener("scroll", updateAutoScrollFlag, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", updateAutoScrollFlag);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const restoreSessions = async () => {
+      try {
+        const resp = await fetch("/api/sessions");
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        if (!Array.isArray(payload)) return;
+        const restored = payload
+          .map((item) => deserializeSession(item))
+          .filter((item): item is ChatSession => Boolean(item))
+          .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+        if (cancelled) return;
+
+        setSessions(restored);
+        if (restored.length === 0) return;
+
+        let preferredId: string | null = null;
+        if (typeof window !== "undefined") {
+          preferredId = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+        }
+        const existing = preferredId
+          ? restored.find((item) => item.id === preferredId)
+          : null;
+        const selectedSession = existing ?? restored[0];
+        setActiveSessionId(selectedSession.id);
+      } catch {
+        // Ignore hydration errors, page still works as in-memory mode
+      } finally {
+        if (!cancelled) {
+          setIsHydrated(true);
+        }
+      }
+    };
+
+    void restoreSessions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    draftRef.current = draftSession;
+  }, [draftSession]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isHydrated) return;
+    if (activeSessionId === DRAFT_SESSION_ID) {
+      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, activeSessionId);
+  }, [activeSessionId, isHydrated]);
+
+  useEffect(() => {
+    sessions.forEach((session) => schedulePersistSession(session.id));
+  }, [sessions, schedulePersistSession]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    sessions.forEach((session) => {
+      session.messages.forEach((message) => {
+        if (!message.uploadProgress?.active) return;
+        message.uploadProgress.files.forEach((file) => {
+          if (!file.bundleId) return;
+          if (file.status === "completed" || file.status === "failed") return;
+          const resumeKey = `${session.id}:${message.id}:${file.fileName}:${file.bundleId}`;
+          if (resumedPollingKeysRef.current.has(resumeKey)) return;
+          resumedPollingKeysRef.current.add(resumeKey);
+
+          void (async () => {
+            let terminal = false;
+            for (let i = 0; i < MAX_STATUS_POLL_SECONDS; i += 1) {
+              if (i > 0) {
+                await new Promise((r) => setTimeout(r, 1000));
+              }
+              const resp = await fetch(`/api/bundle-status/${encodeURIComponent(file.bundleId!)}`);
+              let payload: Record<string, unknown> = {};
+              try {
+                payload = (await resp.json()) as Record<string, unknown>;
+              } catch {
+                payload = {};
+              }
+              if (!resp.ok) {
+                continue;
+              }
+              const status = String(payload?.status ?? "running");
+              const progress = typeof payload?.progress === "number" ? payload.progress : 0;
+              const stageLabel = getBundleStageLabel(status);
+              patchUploadFileProgress(
+                session.id,
+                message.id,
+                file.fileName,
+                {
+                  status: status === "done" ? "completed" : status === "failed" ? "failed" : "processing",
+                  percent: Math.max(8, Math.round(progress * 100)),
+                  stage: stageLabel,
+                  message: stageLabel,
+                  bundleId: file.bundleId,
+                  ...(status === "failed"
+                    ? { error: String(payload?.error || "未知错误") }
+                    : {}),
+                },
+                {
+                  stage: `${file.fileName} - ${stageLabel}`,
+                  message: `${file.fileName} - ${stageLabel}`,
+                }
+              );
+              if (status === "done" || status === "failed") {
+                terminal = true;
+                break;
+              }
+            }
+            if (!terminal) {
+              resumedPollingKeysRef.current.delete(resumeKey);
+            }
+          })();
+        });
+      });
+    });
+  }, [isHydrated, patchUploadFileProgress, sessions]);
+
+  useEffect(() => () => {
+    Object.values(saveTimersRef.current).forEach((timer) => clearTimeout(timer));
+  }, []);
 
   const handleScenarioChange = (scenario: DemoScenario) => {
     setCurrentScenario(scenario);
-    setMessages([]);
-    setIsRunning(false);
+  };
+
+  const handleSelectSession = (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setIsEditingTitle(false);
+  };
+
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    if (!sessionId || sessionId === DRAFT_SESSION_ID) return;
+
+    const resp = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+    if (!resp.ok) return;
+
+    const pendingTimer = saveTimersRef.current[sessionId];
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      delete saveTimersRef.current[sessionId];
+    }
+
+    const snapshot = sessionsRef.current;
+    const remaining = snapshot.filter((session) => session.id !== sessionId);
+    setSessions(remaining);
+
+    if (activeSessionId === sessionId) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      setIsRunning(false);
+      setIsEditingTitle(false);
+      setActiveSessionId(remaining[0]?.id ?? DRAFT_SESSION_ID);
+    }
+  }, [activeSessionId]);
+
+  const handleCreateSession = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
+    setIsRunning(false);
+    setDraftSession(createEmptySession(DRAFT_SESSION_ID));
+    setActiveSessionId(DRAFT_SESSION_ID);
+    setIsEditingTitle(false);
+  };
+
+  const requestGeneratedTitle = useCallback(
+    async (sessionId: string, mode: "initial" | "optimize"): Promise<string | null> => {
+      const snapshot = getConversationSnapshot(sessionId);
+      if (!snapshot) return null;
+      const payload = {
+        mode,
+        messages: snapshot.messages
+          .filter((m) => m.content.trim().length > 0)
+          .slice(-8)
+          .map((m) => ({ role: m.role, content: m.content })),
+      };
+      if (payload.messages.length === 0) return null;
+      try {
+        const resp = await fetch("/api/session-title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) return null;
+        const data = (await resp.json()) as SessionTitleApiResponse;
+        return (data.title || "").trim() || null;
+      } catch {
+        return null;
+      }
+    },
+    [getConversationSnapshot]
+  );
+
+  const applyTitle = useCallback(
+    (sessionId: string, title: string, source: ChatSession["titleSource"]) => {
+      updateConversation(sessionId, (session) => ({
+        ...session,
+        title: title.trim() || session.title,
+        titleSource: source,
+        updatedAt: new Date(),
+      }));
+    },
+    [updateConversation]
+  );
+
+  const maybeAutoTitle = useCallback(
+    async (sessionId: string, completedTurnCount: number) => {
+      const snapshot = getConversationSnapshot(sessionId);
+      if (!snapshot || sessionId === DRAFT_SESSION_ID) return;
+
+      if (completedTurnCount === 1) {
+        if (snapshot.titleSource === "manual") return;
+        const title = await requestGeneratedTitle(sessionId, "initial");
+        if (title) {
+          applyTitle(sessionId, title, "auto");
+        }
+        return;
+      }
+
+      if (
+        completedTurnCount <= 3
+        && !snapshot.titleAutoOptimized
+        && snapshot.titleSource !== "manual"
+      ) {
+        const title = await requestGeneratedTitle(sessionId, "optimize");
+        if (title) {
+          updateConversation(sessionId, (session) => ({
+            ...session,
+            title,
+            titleSource: "auto_optimized",
+            titleAutoOptimized: true,
+            updatedAt: new Date(),
+          }));
+        }
+      }
+    },
+    [applyTitle, getConversationSnapshot, requestGeneratedTitle, updateConversation]
+  );
+
+  const handleSaveTitle = () => {
+    const normalized = titleInput.trim();
+    if (!normalized) {
+      setIsEditingTitle(false);
+      setTitleInput(activeSession?.title ?? "新会话");
+      return;
+    }
+    applyTitle(activeSessionId, normalized, "manual");
+    setIsEditingTitle(false);
   };
 
   const handleStop = () => {
@@ -89,13 +607,306 @@ export default function Home() {
       abortControllerRef.current.abort();
     }
     setIsRunning(false);
-    setMessages((prev) =>
+    updateSessionMessages(activeSessionId, (prev) =>
       prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
     );
   };
 
+  const handleUploadFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+    shouldAutoScrollRef.current = true;
+    const targetSessionId = ensureActiveSession();
+    const uploadMessageId = `${Date.now()}-upload`;
+    const uploadLines = fileArray.map((file) => `- ${file.name}`).join("\n");
+    const initialUploadMessage: ChatMessage = {
+      id: uploadMessageId,
+      role: "user",
+      content: `上传文件：\n${uploadLines}`,
+      timestamp: new Date(),
+      uploadProgress: {
+        active: true,
+        percent: 0,
+        stage: "准备上传",
+        message: "等待开始",
+        files: fileArray.map((file) => ({
+          fileName: file.name,
+          status: "queued",
+          percent: 0,
+          stage: "排队中",
+          message: "等待上传",
+        })),
+      },
+    };
+    updateSessionMessages(targetSessionId, (prev) => [...prev, initialUploadMessage]);
+
+    const updateUploadMessage = (
+      updater: (message: ChatMessage) => ChatMessage
+    ) => {
+      updateSessionMessages(targetSessionId, (prev) =>
+        prev.map((message) => (message.id === uploadMessageId ? updater(message) : message))
+      );
+    };
+
+    const withUpdatedFile = (
+      message: ChatMessage,
+      fileName: string,
+      patch: Partial<NonNullable<ChatMessage["uploadProgress"]>["files"][number]>
+    ) => {
+      const progress = message.uploadProgress;
+      if (!progress) return message;
+      const filesState = progress.files.map((item) =>
+        item.fileName === fileName ? { ...item, ...patch } : item
+      );
+      const aggregatePercent = filesState.length > 0
+        ? Math.round(filesState.reduce((sum, item) => sum + item.percent, 0) / filesState.length)
+        : progress.percent;
+      return {
+        ...message,
+        uploadProgress: {
+          ...progress,
+          percent: aggregatePercent,
+          files: filesState,
+        },
+      };
+    };
+
+    const uploadSummaries: UploadSummary[] = [];
+    const finalFileStates = new Map<string, "completed" | "failed" | "processing">();
+    for (const file of fileArray) {
+      const form = new FormData();
+      form.append("file", file);
+
+      try {
+        updateUploadMessage((message) => {
+          const next = withUpdatedFile(message, file.name, {
+            status: "uploading",
+            percent: 3,
+            stage: "上传中",
+            message: "文件上传中",
+          });
+          if (!next.uploadProgress) return next;
+          return {
+            ...next,
+            uploadProgress: {
+              ...next.uploadProgress,
+              stage: "上传中",
+              message: `正在上传 ${file.name}`,
+            },
+          };
+        });
+        const resp = await fetch("/api/upload-log", {
+          method: "POST",
+          body: form,
+        });
+        const payload = await resp.json();
+        if (!resp.ok) {
+          finalFileStates.set(file.name, "failed");
+          updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+            status: "failed",
+            percent: 100,
+            stage: "上传失败",
+            message: "上传失败",
+            error: String(payload?.detail || payload?.error?.message || payload?.error || resp.status),
+          }));
+          continue;
+        }
+        const bundleId = payload?.bundle_id;
+        if (!bundleId) {
+          finalFileStates.set(file.name, "failed");
+          updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+            status: "failed",
+            percent: 100,
+            stage: "提交失败",
+            message: "未返回 bundle_id",
+            error: "未返回 bundle_id",
+          }));
+          continue;
+        }
+        updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+          bundleId,
+          status: "processing",
+          percent: 8,
+          stage: "已提交，等待处理",
+          message: "已入队，等待处理",
+        }));
+
+        let finalStatus: {
+          status?: string;
+          progress?: number;
+          error?: string | null;
+          file_count?: number;
+          files_by_controller?: Record<string, number>;
+          valid_time_range_by_controller?: Record<string, { start?: number; end?: number }>;
+        } | null = null;
+        let lastObservedStatus = "queued";
+        let lastObservedProgress = 0;
+        let statusQueryError: string | null = null;
+        let consecutiveStatusErrors = 0;
+        for (let i = 0; i < MAX_STATUS_POLL_SECONDS; i += 1) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const stResp = await fetch(`/api/bundle-status/${bundleId}`);
+          let stPayload: Record<string, unknown> = {};
+          try {
+            stPayload = (await stResp.json()) as Record<string, unknown>;
+          } catch {
+            stPayload = {};
+          }
+          if (!stResp.ok) {
+            consecutiveStatusErrors += 1;
+            const errText = String(
+              stPayload?.detail
+              || (typeof stPayload?.error === "object" && stPayload?.error
+                ? (stPayload.error as { message?: string }).message
+                : stPayload?.error)
+              || stResp.status
+            );
+            updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+              status: "processing",
+              stage: "状态查询异常",
+              message: `重试中 (${consecutiveStatusErrors}/${MAX_STATUS_ERROR_RETRIES})`,
+              bundleId,
+            }));
+            if (consecutiveStatusErrors >= MAX_STATUS_ERROR_RETRIES) {
+              statusQueryError = errText;
+              break;
+            }
+            continue;
+          }
+          consecutiveStatusErrors = 0;
+          const progress = typeof stPayload?.progress === "number" ? stPayload.progress : 0;
+          const status = String(stPayload?.status ?? "running");
+          lastObservedStatus = status;
+          lastObservedProgress = progress;
+          const stageLabel = getBundleStageLabel(status);
+          updateUploadMessage((message) => {
+            const next = withUpdatedFile(message, file.name, {
+              status: "processing",
+              percent: Math.max(8, Math.round(progress * 100)),
+              stage: stageLabel,
+              message: `${stageLabel}`,
+              bundleId,
+            });
+            if (!next.uploadProgress) return next;
+            return {
+              ...next,
+              uploadProgress: {
+                ...next.uploadProgress,
+                stage: stageLabel,
+                message: `${file.name} - ${stageLabel}`,
+              },
+            };
+          });
+          if (stPayload?.status === "done" || stPayload?.status === "failed") {
+            finalStatus = stPayload;
+            break;
+          }
+        }
+
+        if (statusQueryError) {
+          finalFileStates.set(file.name, "failed");
+          updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+            status: "failed",
+            percent: 100,
+            stage: "状态查询失败",
+            message: statusQueryError,
+            error: statusQueryError,
+            bundleId,
+          }));
+          continue;
+        }
+
+        if (!finalStatus) {
+          const stageLabel = getBundleStageLabel(lastObservedStatus);
+          finalFileStates.set(file.name, "processing");
+          updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+            status: "processing",
+            percent: Math.max(8, Math.round(lastObservedProgress * 100)),
+            stage: stageLabel,
+            message: "后台处理中，可在消息内继续查看状态",
+            bundleId,
+          }));
+          continue;
+        }
+
+        if (finalStatus.status === "failed") {
+          finalFileStates.set(file.name, "failed");
+          updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+            status: "failed",
+            percent: 100,
+            stage: "处理失败",
+            message: String(finalStatus?.error || "未知错误"),
+            bundleId,
+            error: String(finalStatus?.error || "未知错误"),
+          }));
+          continue;
+        }
+
+        finalFileStates.set(file.name, "completed");
+        uploadSummaries.push({
+          bundleId,
+          fileName: file.name,
+          fileCount: finalStatus.file_count ?? 0,
+          filesByController: finalStatus.files_by_controller ?? {},
+          validTimeRangeByController: finalStatus.valid_time_range_by_controller ?? {},
+        });
+        updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+          status: "completed",
+          percent: 100,
+          stage: "处理完成",
+          message: "上传与解析完成",
+          bundleId,
+        }));
+      } catch (err) {
+        finalFileStates.set(file.name, "failed");
+        updateUploadMessage((message) => withUpdatedFile(message, file.name, {
+          status: "failed",
+          percent: 100,
+          stage: "上传异常",
+          message: (err as Error).message,
+          error: (err as Error).message,
+        }));
+      }
+    }
+    updateUploadMessage((message) => {
+      if (!message.uploadProgress) return message;
+      const states = fileArray.map((file) => finalFileStates.get(file.name) ?? "failed");
+      const hasProcessing = states.some((state) => state === "processing");
+      const hasFailed = states.some((state) => state === "failed");
+      const aggregatedPercent = message.uploadProgress.files.length > 0
+        ? Math.round(message.uploadProgress.files.reduce((sum, file) => sum + file.percent, 0) / message.uploadProgress.files.length)
+        : message.uploadProgress.percent;
+      return {
+        ...message,
+        uploadProgress: {
+          ...message.uploadProgress,
+          active: hasProcessing,
+          percent: hasProcessing ? Math.max(8, Math.min(99, aggregatedPercent)) : 100,
+          stage: hasProcessing ? "后台处理中" : (hasFailed ? "处理结束（含失败）" : "处理完成"),
+          message: hasProcessing
+            ? "部分文件仍在后台处理中，可在消息内继续查看状态"
+            : (hasFailed ? "上传和解析结束，部分文件失败" : "上传和解析流程已结束"),
+        },
+      };
+    });
+    if (uploadSummaries.length > 0) {
+      const summaryMessage: ChatMessage = {
+        id: `${Date.now()}-upload-summary`,
+        role: "system",
+        systemKind: "upload_summary",
+        content: "日志上传汇总",
+        timestamp: new Date(),
+        uploadSummaries,
+      };
+      updateSessionMessages(targetSessionId, (prev) => [...prev, summaryMessage]);
+    }
+  };
+
   const handleSend = async (message: string) => {
     if (isRunning) return;
+    shouldAutoScrollRef.current = true;
+    const targetSessionId = ensureActiveSession();
+    const currentSnapshot = getConversationSnapshot(targetSessionId);
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -114,10 +925,10 @@ export default function Home() {
       isStreaming: true,
     };
 
-    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+    updateSessionMessages(targetSessionId, (prev) => [...prev, userMessage, assistantMessage]);
     setIsRunning(true);
 
-    const historyPayload = messages.map((m) => ({
+    const historyPayload = (currentSnapshot?.messages ?? []).map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -128,7 +939,7 @@ export default function Home() {
     const applySsePayload = (data: SsePayload) => {
       switch (data.type) {
         case "step_start":
-          setMessages((prev) =>
+          updateSessionMessages(targetSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
@@ -144,7 +955,7 @@ export default function Home() {
           break;
 
         case "step_progress":
-          setMessages((prev) =>
+          updateSessionMessages(targetSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
@@ -164,7 +975,7 @@ export default function Home() {
           break;
 
         case "step_complete":
-          setMessages((prev) =>
+          updateSessionMessages(targetSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
@@ -184,7 +995,7 @@ export default function Home() {
           break;
 
         case "content_delta":
-          setMessages((prev) =>
+          updateSessionMessages(targetSessionId, (prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
               const chunk = data.content ?? "";
@@ -198,7 +1009,7 @@ export default function Home() {
           break;
 
         case "content_complete":
-          setMessages((prev) =>
+          updateSessionMessages(targetSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
@@ -226,7 +1037,7 @@ export default function Home() {
             timestamp: new Date().toISOString(),
           } as import("@/lib/types").WorkspaceUpdate;
 
-          setMessages((prev) =>
+          updateSessionMessages(targetSessionId, (prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
               const updatedSteps = m.thinking!.steps.map((s) => {
@@ -244,6 +1055,16 @@ export default function Home() {
 
         case "done":
           setIsRunning(false);
+          {
+            const snapshot = getConversationSnapshot(targetSessionId);
+            const completedTurnCount = (snapshot?.turnCount ?? 0) + 1;
+            updateConversation(targetSessionId, (session) => ({
+              ...session,
+              turnCount: completedTurnCount,
+              updatedAt: new Date(),
+            }));
+            void maybeAutoTitle(targetSessionId, completedTurnCount);
+          }
           break;
       }
     };
@@ -289,7 +1110,7 @@ export default function Home() {
       if ((err as Error).name === "AbortError") return;
       console.error("Stream error:", err);
       setIsRunning(false);
-      setMessages((prev) =>
+      updateSessionMessages(targetSessionId, (prev) =>
         prev.map((m) =>
           m.id === assistantId
             ? {
@@ -303,7 +1124,7 @@ export default function Home() {
     }
   };
 
-  const hasMessages = messages.length > 0;
+  const hasMessages = activeMessages.length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "var(--bg-primary)" }}>
@@ -312,24 +1133,91 @@ export default function Home() {
         onScenarioChange={handleScenarioChange}
       />
 
-      <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        {!hasMessages ? (
-          <WelcomePage onQuestionClick={handleSend} />
-        ) : (
-          <div style={{ maxWidth: "48rem", margin: "0 auto", padding: "24px 16px", width: "100%" }}>
-            {messages.map((msg) => (
-              <ChatMessageComponent key={msg.id} message={msg} />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </main>
+      <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <SessionSidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId === DRAFT_SESSION_ID ? undefined : activeSessionId}
+          onSelectSession={handleSelectSession}
+          onCreateSession={handleCreateSession}
+          onDeleteSession={handleDeleteSession}
+        />
 
-      <InputBar
-        onSend={handleSend}
-        isRunning={isRunning}
-        onStop={handleStop}
-      />
+        <div
+          style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}
+        >
+          <div
+            className="border-b px-4 py-3"
+            style={{ borderColor: "var(--border-color)", background: "var(--bg-primary)" }}
+          >
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2">
+                <input
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveTitle();
+                    if (e.key === "Escape") {
+                      setIsEditingTitle(false);
+                      setTitleInput(activeSession?.title ?? "新会话");
+                    }
+                  }}
+                  className="w-full rounded-md border px-3 py-1.5 text-sm outline-none"
+                  style={{
+                    borderColor: "var(--border-color)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                  }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveTitle}
+                  className="rounded-md px-3 py-1.5 text-sm"
+                  style={{ background: "var(--accent-blue)", color: "#fff" }}
+                >
+                  保存
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setTitleInput(activeSession?.title ?? "新会话");
+                  setIsEditingTitle(true);
+                }}
+                className="text-left text-sm font-medium"
+                style={{ color: "var(--text-primary)" }}
+                title="点击编辑标题"
+              >
+                {activeSession?.title || "新会话"}
+              </button>
+            )}
+          </div>
+
+          <div
+            ref={chatScrollContainerRef}
+            style={{ flex: 1, overflowY: "auto" }}
+          >
+            {!hasMessages ? (
+              <WelcomePage onQuestionClick={handleSend} />
+            ) : (
+              <div style={{ maxWidth: "48rem", margin: "0 auto", padding: "24px 16px", width: "100%" }}>
+                {activeMessages.map((msg) => (
+                  <ChatMessageComponent key={msg.id} message={msg} />
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          <InputBar
+            onSend={handleSend}
+            isRunning={isRunning}
+            onStop={handleStop}
+            onUploadFiles={handleUploadFiles}
+          />
+        </div>
+      </main>
     </div>
   );
 }

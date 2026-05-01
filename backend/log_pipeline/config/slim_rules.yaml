@@ -1,0 +1,35 @@
+# Dynamic slim filter — applied at query time, never persisted.
+# Three-level decision per line:
+#   1. keep_always: any pattern hits → emit (overrides drop)
+#   2. drop: any controller-scoped pattern hits → skip
+#   3. otherwise → pass through
+slim:
+  drop:
+    - controller: android
+      patterns:
+        - '(?i)I/ActivityManager.*Displayed'
+        - '^\s*V/'                        # verbose
+        - 'I/chatty.*identical.*lines'
+        - '^\s*\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3,6}\s+\d+\s+\d+\s+D\s'  # debug spam
+    - controller: kernel
+      patterns:
+        - '(?i)\baudit:'
+        - '(?i)wlan: rate'
+        - '(?i)\bnomatch\b'
+    - controller: tbox
+      patterns:
+        - '(?i)\bheartbeat\b'
+        - '(?i)\bkeepalive\b'
+        - '(?i)\bping\b.{0,40}\bok\b'
+    - controller: fota
+      patterns:
+        - '(?i)\bping\b.{0,40}\bok\b'
+
+  keep_always:
+    - '(?i)\bpanic\b'
+    - '(?i)\bfatal\b'
+    - '(?i)\bexception\b'
+    - '(?i)\bBUG:\s'
+    - '(?i)\boom-killer\b'
+    - '(?i)\babort\b'
+    - '(?i)\bsegfault\b'

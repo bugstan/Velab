@@ -7,6 +7,12 @@
 
 set -e
 
+if [ "$(uname -s 2>/dev/null || echo)" = "Darwin" ]; then
+  echo "此 deploy.sh 仅适用于 Linux 生产机（apt / systemd）。"
+  echo "在 macOS 上请使用: ./scripts/start-dev.sh 与 Homebrew 安装 postgresql@16、redis 等，勿用本脚本自动部署。"
+  exit 1
+fi
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -67,7 +73,7 @@ echo -e "${GREEN}✓ 部署目录已创建${NC}"
 
 # 4. 复制代码到部署目录
 echo -e "${BLUE}[4/8] 复制代码文件...${NC}"
-rsync -av --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
+rsync -av --exclude='venv' --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
     $BACKEND_DIR/ $DEPLOY_DIR/
 chown -R fota:fota $DEPLOY_DIR
 echo -e "${GREEN}✓ 代码文件已复制并设置权限${NC}"

@@ -13,12 +13,12 @@ FOTA 智能诊断平台 — 异步任务队列模块
 创建时间：2026-04-04
 """
 
-from .worker import WorkerSettings, parse_logs_task
+from .worker import WorkerSettings, parse_bundle_task
 from .client import TaskClient, get_task_client
 
 __all__ = [
     "WorkerSettings",
-    "parse_logs_task",
+    "parse_bundle_task",
     "TaskClient",
     "get_task_client",
 ]
