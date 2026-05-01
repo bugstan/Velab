@@ -34,6 +34,25 @@ import {
 import { parseSSEBuffer } from "@/lib/sseParse";
 import { rememberLastBundleId } from "@/components/TaskStatusLookup";
 
+const BUNDLE_STAGE_LABELS: Record<string, string> = {
+  queued: "已入队，等待处理",
+  extracting: "步骤 1/4：解压与分类中",
+  decoding: "步骤 2/4：日志解码中",
+  prescanning: "步骤 3/4：预扫描与事件抽取中",
+  aligning: "步骤 4/4：时间对齐中",
+  done: "处理完成",
+  failed: "处理失败",
+};
+
+const MAX_STATUS_POLL_SECONDS = 600;
+
+const formatUnixSeconds = (value: number | null | undefined): string => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "无有效时间";
+  }
+  return new Date(value * 1000).toISOString();
+};
+
 
 /**
  * SSE 事件载荷类型定义
@@ -111,7 +130,7 @@ export default function Home() {
     if (fileArray.length === 0) return;
 
     const resultLines: string[] = [];
-    const bundleActions: { label: string; bundleId: string }[] = [];
+    const bundleActions: { label: string; bundleId: string; action?: "status" | "rangeQuery" }[] = [];
     for (const file of fileArray) {
       const form = new FormData();
       form.append("file", file);
@@ -138,7 +157,6 @@ export default function Home() {
           continue;
         }
         rememberLastBundleId(bundleId);
-        bundleActions.push({ label: file.name, bundleId });
 
         let finalStatus: {
           status?: string;
@@ -146,17 +164,24 @@ export default function Home() {
           error?: string | null;
           file_count?: number;
           files_by_controller?: Record<string, number>;
+          valid_time_range_by_controller?: Record<string, { start?: number; end?: number }>;
         } | null = null;
-        for (let i = 0; i < 240; i += 1) {
+        let lastObservedStatus = "queued";
+        let lastObservedProgress = 0;
+        for (let i = 0; i < MAX_STATUS_POLL_SECONDS; i += 1) {
           await new Promise((r) => setTimeout(r, 1000));
           const stResp = await fetch(`/api/bundle-status/${bundleId}`);
           const stPayload = await stResp.json();
           const progress = typeof stPayload?.progress === "number" ? stPayload.progress : 0;
+          const status = String(stPayload?.status ?? "running");
+          lastObservedStatus = status;
+          lastObservedProgress = progress;
+          const stageLabel = BUNDLE_STAGE_LABELS[status] ?? `处理中（${status}）`;
           setUploadProgress({
             active: true,
             percent: Math.round(progress * 100),
-            stage: String(stPayload?.status ?? "running"),
-            message: "处理中",
+            stage: stageLabel,
+            message: `${file.name} - ${stageLabel}`,
           });
           if (stPayload?.status === "done" || stPayload?.status === "failed") {
             finalStatus = stPayload;
@@ -165,9 +190,13 @@ export default function Home() {
         }
 
         if (!finalStatus) {
+          const stageLabel = BUNDLE_STAGE_LABELS[lastObservedStatus] ?? `处理中（${lastObservedStatus}）`;
           resultLines.push(
-            `- ${file.name}: 界面等待已结束，任务可能仍在后台处理，可点下方按钮查看实时状态。`
+            `- ${file.name}: 当前仍在后台处理（阶段：${stageLabel}，进度：${Math.round(
+              lastObservedProgress * 100
+            )}%）。可点下方按钮查看实时状态。`
           );
+          bundleActions.push({ label: file.name, bundleId, action: "status" });
           continue;
         }
 
@@ -179,9 +208,19 @@ export default function Home() {
         const ctrlSummary = finalStatus.files_by_controller
           ? Object.entries(finalStatus.files_by_controller).map(([k, v]) => `${k}=${v}`).join(", ")
           : "—";
+        const timeSummary = finalStatus.valid_time_range_by_controller
+          ? Object.entries(finalStatus.valid_time_range_by_controller)
+              .map(
+                ([controller, range]) =>
+                  `${controller}:[${formatUnixSeconds(range.start)} ~ ${formatUnixSeconds(range.end)}]`
+              )
+              .join("; ")
+          : "—";
         resultLines.push(
-          `- ${file.name}: 完成（共 ${finalStatus.file_count ?? 0} 个文件；按控制器 ${ctrlSummary}）`
+          `- ${file.name}: 完成（共 ${finalStatus.file_count ?? 0} 个文件；按控制器 ${ctrlSummary}；有效时间 ${timeSummary}）`
         );
+        bundleActions.push({ label: file.name, bundleId, action: "status" });
+        bundleActions.push({ label: file.name, bundleId, action: "rangeQuery" });
       } catch (err) {
         resultLines.push(`- ${file.name}: 上传异常 (${(err as Error).message})`);
       }

@@ -292,13 +292,20 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             <div className="mt-3 flex flex-wrap gap-2">
               {message.bundleActions.map((a) => (
                 <button
-                  key={`${a.bundleId}-${a.label}`}
+                  key={`${a.bundleId}-${a.label}-${a.action ?? "status"}`}
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
+                    if (a.action === "rangeQuery") {
+                      window.open(
+                        `/temp/range-query?bundle_id=${encodeURIComponent(a.bundleId)}`,
+                        "_blank"
+                      );
+                      return;
+                    }
                     window.dispatchEvent(
                       new CustomEvent(FOTA_OPEN_BUNDLE_STATUS, { detail: a.bundleId })
-                    )
-                  }
+                    );
+                  }}
                   className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-90"
                   style={{
                     background: "var(--accent-blue)",
@@ -307,7 +314,9 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                     cursor: "pointer",
                   }}
                 >
-                  查看「{a.label}」摄取状态
+                  {a.action === "rangeQuery"
+                    ? `打开「${a.label}」临时查询页`
+                    : `查看「${a.label}」摄取状态`}
                 </button>
               ))}
             </div>

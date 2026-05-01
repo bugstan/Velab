@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
+import os
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 from uuid import UUID
 
-from log_pipeline.decoders.base import DecoderRegistry
+from log_pipeline.decoders.base import DecoderRegistry, default_registry
 from log_pipeline.decoders.kernel import is_boot_capture_path, parse_kernel_dump_filename
 from log_pipeline.decoders.mcu_text import detect_mcu_segments
 from log_pipeline.interfaces import (
@@ -22,6 +25,18 @@ from log_pipeline.storage.filestore import FileStore
 logger = logging.getLogger(__name__)
 
 _DECODED_SUFFIX = ".decoded.log"
+_PARALLEL_MIN_FILES = 4
+_W_REGISTRY: Optional[DecoderRegistry] = None
+
+
+def _init_worker() -> None:
+    global _W_REGISTRY
+    _W_REGISTRY = default_registry()
+
+
+def _decode_one_worker(meta: LogFileMeta) -> Optional[DecodeFileResult]:
+    assert _W_REGISTRY is not None
+    return _decode_one_impl(_W_REGISTRY, meta)
 
 
 @dataclass
@@ -46,10 +61,17 @@ class DecodeStage:
     points at the original ``stored_path`` so downstream prescan can uniformly read it.
     """
 
-    def __init__(self, registry: DecoderRegistry, catalog: Catalog, filestore: FileStore):
+    def __init__(
+        self,
+        registry: DecoderRegistry,
+        catalog: Catalog,
+        filestore: FileStore,
+        max_workers: int = 0,
+    ):
         self._registry = registry
         self._catalog = catalog
         self._filestore = filestore
+        self._max_workers = max_workers or (os.cpu_count() or 1)
 
     def run(
         self,
@@ -59,8 +81,8 @@ class DecodeStage:
         files = self._catalog.list_files_by_bundle(bundle_id)
         counts: Counter[str] = Counter()
         total = len(files)
-        for i, meta in enumerate(files):
-            res = self._decode_one(meta)
+        results = self._decode_all(files, progress_cb)
+        for meta, res in zip(files, results):
             if res is None:
                 counts["unhandled"] += 1
                 self._filestore.append_processing_log(
@@ -80,9 +102,37 @@ class DecodeStage:
                 )
                 self._maybe_apply_filename_anchor(meta, res, bundle_id)
                 counts[res.decoder_name] += 1
-            if progress_cb is not None and total:
-                progress_cb((i + 1) / total)
         return dict(counts)
+
+    def _decode_all(
+        self,
+        files: list[LogFileMeta],
+        progress_cb: Optional[Callable[[float], None]],
+    ) -> list[Optional[DecodeFileResult]]:
+        total = len(files)
+        if (
+            self._max_workers <= 1
+            or total < _PARALLEL_MIN_FILES
+        ):
+            out: list[Optional[DecodeFileResult]] = []
+            for i, meta in enumerate(files):
+                out.append(self._decode_one(meta))
+                if progress_cb is not None and total:
+                    progress_cb((i + 1) / total)
+            return out
+
+        ctx = mp.get_context("fork") if os.name == "posix" else mp.get_context()
+        with ProcessPoolExecutor(
+            max_workers=self._max_workers,
+            mp_context=ctx,
+            initializer=_init_worker,
+        ) as pool:
+            out = []
+            for i, res in enumerate(pool.map(_decode_one_worker, files, chunksize=1)):
+                out.append(res)
+                if progress_cb is not None and total:
+                    progress_cb((i + 1) / total)
+            return out
 
     def _maybe_apply_filename_anchor(
         self, meta: LogFileMeta, res: DecodeFileResult, bundle_id: UUID
@@ -198,51 +248,58 @@ class DecodeStage:
         )
 
     def _decode_one(self, meta: LogFileMeta) -> Optional[DecodeFileResult]:
-        stored = Path(meta.stored_path)
-        if not stored.is_file():
-            return None
-        decoder = self._registry.find(meta.controller, stored)
-        if decoder is None:
-            return None
+        return _decode_one_impl(self._registry, meta)
 
-        line_count = 0
-        raw_min: Optional[float] = None
-        raw_max: Optional[float] = None
-        valid_min: Optional[float] = None
-        valid_max: Optional[float] = None
-        bytes_written = 0
-        decoded_path: Optional[str] = None
 
-        if decoder.writes_decoded_file():
-            decoded_path = str(stored) + _DECODED_SUFFIX
-            partial = decoded_path + ".partial"
-            with open(partial, "w", encoding="utf-8") as out:
-                for ln in decoder.iter_lines(stored):
-                    out.write(ln.text + "\n")
-                    line_count += 1
-                    bytes_written += len(ln.text) + 1
-                    raw_min, raw_max = _update_ts(ln.raw_timestamp, raw_min, raw_max)
-                    valid_min, valid_max = _update_valid(ln.raw_timestamp, valid_min, valid_max)
-            Path(partial).replace(decoded_path)
-        else:
-            decoded_path = meta.stored_path
+def _decode_one_impl(
+    registry: DecoderRegistry,
+    meta: LogFileMeta,
+) -> Optional[DecodeFileResult]:
+    stored = Path(meta.stored_path)
+    if not stored.is_file():
+        return None
+    decoder = registry.find(meta.controller, stored)
+    if decoder is None:
+        return None
+
+    line_count = 0
+    raw_min: Optional[float] = None
+    raw_max: Optional[float] = None
+    valid_min: Optional[float] = None
+    valid_max: Optional[float] = None
+    bytes_written = 0
+    decoded_path: Optional[str] = None
+
+    if decoder.writes_decoded_file():
+        decoded_path = str(stored) + _DECODED_SUFFIX
+        partial = decoded_path + ".partial"
+        with open(partial, "w", encoding="utf-8") as out:
             for ln in decoder.iter_lines(stored):
+                out.write(ln.text + "\n")
                 line_count += 1
+                bytes_written += len(ln.text) + 1
                 raw_min, raw_max = _update_ts(ln.raw_timestamp, raw_min, raw_max)
                 valid_min, valid_max = _update_valid(ln.raw_timestamp, valid_min, valid_max)
+        Path(partial).replace(decoded_path)
+    else:
+        decoded_path = meta.stored_path
+        for ln in decoder.iter_lines(stored):
+            line_count += 1
+            raw_min, raw_max = _update_ts(ln.raw_timestamp, raw_min, raw_max)
+            valid_min, valid_max = _update_valid(ln.raw_timestamp, valid_min, valid_max)
 
-        return DecodeFileResult(
-            file_id=meta.file_id,
-            controller=meta.controller,
-            decoder_name=type(decoder).__name__,
-            decoded_path=decoded_path,
-            line_count=line_count,
-            raw_ts_min=raw_min,
-            raw_ts_max=raw_max,
-            valid_ts_min=valid_min,
-            valid_ts_max=valid_max,
-            bytes_written=bytes_written,
-        )
+    return DecodeFileResult(
+        file_id=meta.file_id,
+        controller=meta.controller,
+        decoder_name=type(decoder).__name__,
+        decoded_path=decoded_path,
+        line_count=line_count,
+        raw_ts_min=raw_min,
+        raw_ts_max=raw_max,
+        valid_ts_min=valid_min,
+        valid_ts_max=valid_max,
+        bytes_written=bytes_written,
+    )
 
 
 def _update_ts(

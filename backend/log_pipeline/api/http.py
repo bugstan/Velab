@@ -145,6 +145,7 @@ async def get_bundle(request: Request, bundle_id: str) -> JSONResponse | dict:
 
     files = catalog.list_files_by_bundle(bid)
     per_ctrl = catalog.count_by_controller(bid)
+    per_ctrl_time_range = catalog.valid_time_range_by_controller(bid)
     return {
         "bundle_id": bundle_id,
         "status": bundle["status"],
@@ -154,6 +155,7 @@ async def get_bundle(request: Request, bundle_id: str) -> JSONResponse | dict:
         "error": bundle["error"],
         "file_count": len(files),
         "files_by_controller": per_ctrl,
+        "valid_time_range_by_controller": per_ctrl_time_range,
     }
 
 

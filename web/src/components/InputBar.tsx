@@ -228,6 +228,11 @@ export default function InputBar({ onSend, isRunning, onStop, onUploadFiles, upl
             <span>{uploadProgress.message || "处理中..."}</span>
             <span>{Math.max(0, Math.min(100, uploadProgress.percent))}%</span>
           </div>
+          {uploadProgress.stage ? (
+            <div style={{ marginBottom: 4, color: "var(--text-muted)" }}>
+              {uploadProgress.stage}
+            </div>
+          ) : null}
           <div style={{ width: "100%", height: 6, background: "var(--border-color)", borderRadius: 999 }}>
             <div
               style={{

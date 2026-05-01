@@ -29,6 +29,7 @@ export interface ThinkingProcessData {
 export interface BundleAction {
   label: string;
   bundleId: string;
+  action?: "status" | "rangeQuery";
 }
 
 export interface ChatMessage {

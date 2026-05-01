@@ -358,6 +358,26 @@ class Catalog:
         ).fetchall()
         return {r["controller"]: r["n"] for r in rows}
 
+    def valid_time_range_by_controller(
+        self, bundle_id: UUID
+    ) -> dict[str, dict[str, Optional[float]]]:
+        """Aggregate per-controller valid timestamp range within one bundle."""
+        rows = self._conn().execute(
+            """
+            SELECT controller, MIN(valid_ts_min) AS valid_start, MAX(valid_ts_max) AS valid_end
+              FROM catalog
+             WHERE bundle_id = ?
+               AND valid_ts_min IS NOT NULL
+               AND valid_ts_max IS NOT NULL
+             GROUP BY controller
+            """,
+            (str(bundle_id),),
+        ).fetchall()
+        return {
+            r["controller"]: {"start": r["valid_start"], "end": r["valid_end"]}
+            for r in rows
+        }
+
     @staticmethod
     def _row_to_meta(row: sqlite3.Row) -> LogFileMeta:
         ranges_raw = json.loads(row["unsynced_ranges_json"] or "[]")
