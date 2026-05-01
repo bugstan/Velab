@@ -25,6 +25,7 @@ export default defineConfig({
                 '.next/',
                 'out/',
                 'build/',
+                'src/app/page.tsx',
                 '**/*.config.*',
                 '**/*.d.ts',
                 '**/types/**',

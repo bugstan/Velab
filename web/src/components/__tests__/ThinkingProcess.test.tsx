@@ -244,4 +244,74 @@ describe('ThinkingProcess Component', () => {
             expect(animatedDiv).toBeInTheDocument()
         })
     })
+
+    describe('Workspace 更新面板', () => {
+        it('应渲染 todo/notes 更新并支持折叠', () => {
+            const stepsWithWorkspace: AgentStep[] = [
+                {
+                    stepNumber: 1,
+                    agentName: 'Agent Workspace',
+                    status: 'completed',
+                    statusText: 'Done',
+                    workspaceUpdates: [
+                        {
+                            file: 'todo.md',
+                            agent: 'Agent Workspace',
+                            change: '[x] 完成上传流程',
+                            timestamp: '2026-01-01T00:00:00Z',
+                        },
+                        {
+                            file: 'todo.md',
+                            agent: 'Agent Workspace',
+                            change: '[ ] 补充回归测试',
+                            timestamp: '2026-01-01T00:01:00Z',
+                        },
+                        {
+                            file: 'notes.md',
+                            agent: 'Agent Workspace',
+                            change: '定位到根因为缺失依赖',
+                            timestamp: '2026-01-01T00:02:00Z',
+                        },
+                    ],
+                },
+            ]
+
+            render(<ThinkingProcess steps={stepsWithWorkspace} defaultExpanded={true} />)
+
+            expect(screen.getByText('Workspace · Agent Workspace')).toBeInTheDocument()
+            expect(screen.getByText('3 updates')).toBeInTheDocument()
+            expect(screen.getByText('完成上传流程')).toBeInTheDocument()
+            expect(screen.getByText('补充回归测试')).toBeInTheDocument()
+            expect(screen.getByText('定位到根因为缺失依赖')).toBeInTheDocument()
+            expect(screen.getByText('todo.md')).toBeInTheDocument()
+            expect(screen.getByText('notes.md')).toBeInTheDocument()
+
+            fireEvent.click(screen.getByRole('button', { name: /Workspace · Agent Workspace/i }))
+            expect(screen.queryByText('完成上传流程')).not.toBeInTheDocument()
+            fireEvent.click(screen.getByRole('button', { name: /Workspace · Agent Workspace/i }))
+            expect(screen.getByText('完成上传流程')).toBeInTheDocument()
+        })
+
+        it('单条更新时应使用单数文案', () => {
+            const singleUpdate: AgentStep[] = [
+                {
+                    stepNumber: 1,
+                    agentName: 'Single',
+                    status: 'completed',
+                    statusText: 'Done',
+                    workspaceUpdates: [
+                        {
+                            file: 'notes.md',
+                            agent: 'Single',
+                            change: '仅一条记录',
+                            timestamp: '2026-01-01T00:00:00Z',
+                        },
+                    ],
+                },
+            ]
+
+            render(<ThinkingProcess steps={singleUpdate} defaultExpanded={true} />)
+            expect(screen.getByText('1 update')).toBeInTheDocument()
+        })
+    })
 })

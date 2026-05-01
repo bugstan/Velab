@@ -91,6 +91,36 @@ export const handlers = [
         return createSSEResponse(events)
     }),
 
+    // 会话列表
+    http.get('/api/sessions', () => {
+        return HttpResponse.json([])
+    }),
+
+    // 会话更新
+    http.put('/api/sessions/:sessionId', () => {
+        return HttpResponse.json({})
+    }),
+
+    // 会话删除
+    http.delete('/api/sessions/:sessionId', () => {
+        return new HttpResponse(null, { status: 204 })
+    }),
+
+    // 标题生成
+    http.post('/api/session-title', () => {
+        return HttpResponse.json({ title: 'MSW 标题' })
+    }),
+
+    // 上传日志
+    http.post('/api/upload-log', () => {
+        return HttpResponse.json({ bundle_id: 'mock-bundle-id' })
+    }),
+
+    // bundle 状态查询
+    http.get('/api/bundle-status/:bundleId', () => {
+        return HttpResponse.json({ status: 'done', progress: 1 })
+    }),
+
     // 健康检查
     http.get(`${BACKEND_URL}/health`, () => {
         return HttpResponse.json({ status: 'ok' })
