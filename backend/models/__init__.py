@@ -8,9 +8,12 @@ SQLite catalog；PostgreSQL 仅保留诊断业务侧的 case + 反馈表。
 from .base import Base
 from .case import Case
 from .diagnosis import ConfirmedDiagnosis
+from .chat_session import ChatSession, ChatMessageRecord
 
 __all__ = [
     'Base',
     'Case',
     'ConfirmedDiagnosis',
+    'ChatSession',
+    'ChatMessageRecord',
 ]

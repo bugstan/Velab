@@ -32,6 +32,37 @@ export interface BundleAction {
   action?: "status" | "rangeQuery";
 }
 
+export interface TimeRangeSummary {
+  start?: number;
+  end?: number;
+}
+
+export interface UploadSummary {
+  bundleId: string;
+  fileName: string;
+  fileCount: number;
+  filesByController: Record<string, number>;
+  validTimeRangeByController: Record<string, TimeRangeSummary>;
+}
+
+export interface UploadFileProgress {
+  fileName: string;
+  status: "queued" | "uploading" | "processing" | "completed" | "failed";
+  percent: number;
+  stage: string;
+  message: string;
+  bundleId?: string;
+  error?: string;
+}
+
+export interface UploadProgressView {
+  active: boolean;
+  percent: number;
+  stage: string;
+  message: string;
+  files: UploadFileProgress[];
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -41,8 +72,23 @@ export interface ChatMessage {
   isStreaming?: boolean;
   sources?: SourceReference[];
   confidenceLevel?: string;
-  /** 有 bundle 摄取任务时展示跳转到底栏状态查询的按钮 */
+  /** 有 bundle 摄取任务时在消息气泡内展示状态查询等按钮 */
   bundleActions?: BundleAction[];
+  /** 上传解析完成后的结构化 summary（用于泳道图） */
+  uploadSummaries?: UploadSummary[];
+  /** 上传消息内联进度（上传和解析都在同一气泡中展示） */
+  uploadProgress?: UploadProgressView;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+  titleSource: "default" | "auto" | "auto_optimized" | "manual";
+  titleAutoOptimized: boolean;
+  turnCount: number;
 }
 
 export interface SourceReference {

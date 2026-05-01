@@ -20,11 +20,17 @@
 
 "use client";
 
+import { useState } from "react";
 import { ChatMessage as ChatMessageType } from "@/lib/types";
+import {
+  BundleStatusPayload,
+  formatBundleStatusDetails,
+  getBundleQueryErrorText,
+} from "@/lib/bundleStatus";
 import ThinkingProcess from "./ThinkingProcess";
 import FeedbackButtons from "./FeedbackButtons";
 import SourcePanel from "./SourcePanel";
-import { FOTA_OPEN_BUNDLE_STATUS } from "@/components/TaskStatusLookup";
+import UploadSummaryCard from "./UploadSummaryCard";
 
 /**
  * 组件属性接口
@@ -229,6 +235,171 @@ function renderMarkdown(content: string): string {
 }
 
 export default function ChatMessageComponent({ message }: ChatMessageProps) {
+  const [statusByBundleId, setStatusByBundleId] = useState<Record<string, string>>({});
+  const [loadingBundleId, setLoadingBundleId] = useState<string | null>(null);
+
+  const fetchBundleStatus = async (bundleId: string) => {
+    setLoadingBundleId(bundleId);
+    try {
+      const resp = await fetch(`/api/bundle-status/${encodeURIComponent(bundleId)}`);
+      const payload = (await resp.json()) as BundleStatusPayload;
+      if (!resp.ok) {
+        setStatusByBundleId((prev) => ({
+          ...prev,
+          [bundleId]: getBundleQueryErrorText(payload, resp.status),
+        }));
+        return;
+      }
+      setStatusByBundleId((prev) => ({
+        ...prev,
+        [bundleId]: formatBundleStatusDetails(payload) || "已查询，返回为空",
+      }));
+    } catch (err) {
+      setStatusByBundleId((prev) => ({
+        ...prev,
+        [bundleId]: `网络错误: ${(err as Error).message}`,
+      }));
+    } finally {
+      setLoadingBundleId((current) => (current === bundleId ? null : current));
+    }
+  };
+
+  const renderBundleActions = () => {
+    if (message.isStreaming || !message.bundleActions || message.bundleActions.length === 0) {
+      return null;
+    }
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {message.bundleActions.map((action) => (
+          <button
+            key={`${action.bundleId}-${action.label}-${action.action ?? "status"}`}
+            type="button"
+            onClick={() => {
+              if (action.action === "rangeQuery") {
+                window.open(
+                  `/temp/range-query?bundle_id=${encodeURIComponent(action.bundleId)}`,
+                  "_blank"
+                );
+                return;
+              }
+              void fetchBundleStatus(action.bundleId);
+            }}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-90"
+            style={{
+              background: "var(--accent-blue)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            {action.action === "rangeQuery"
+              ? `打开「${action.label}」临时查询页`
+              : loadingBundleId === action.bundleId
+                ? `查询「${action.label}」状态中...`
+                : `查看「${action.label}」摄取状态`}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const renderStatusDetails = () => {
+    const entries = Object.entries(statusByBundleId);
+    if (entries.length === 0) return null;
+    return (
+      <div className="mt-3 grid gap-2">
+        {entries.map(([bundleId, details]) => (
+          <pre
+            key={bundleId}
+            className="rounded-lg border px-3 py-2 text-xs whitespace-pre-wrap"
+            style={{
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+              background: "var(--bg-secondary)",
+            }}
+          >
+            {`bundle_id: ${bundleId}\n${details}`}
+          </pre>
+        ))}
+      </div>
+    );
+  };
+
+  const renderUploadProgress = () => {
+    if (!message.uploadProgress) return null;
+    const progress = message.uploadProgress;
+    const hasFailed = progress.files.some((file) => file.status === "failed");
+    const allCompleted = progress.files.length > 0 && progress.files.every((file) => file.status === "completed");
+    const progressBarColor = hasFailed
+      ? "#f85149"
+      : allCompleted
+        ? "#238636"
+        : "var(--accent-blue)";
+    const statusColorMap: Record<string, string> = {
+      completed: "#238636",
+      failed: "#f85149",
+      processing: "var(--accent-blue)",
+      uploading: "var(--accent-blue)",
+      queued: "var(--text-secondary)",
+    };
+    const statusIconMap: Record<string, string> = {
+      completed: "✓",
+      failed: "●",
+      processing: "●",
+      uploading: "●",
+      queued: "○",
+    };
+    return (
+      <div
+        className="mt-3 rounded-xl border p-3"
+        style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}
+      >
+        <div className="flex items-center justify-between text-xs mb-1">
+          <span style={{ color: "var(--text-secondary)" }}>{progress.message || "处理中..."}</span>
+          <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+            {Math.max(0, Math.min(100, progress.percent))}%
+          </span>
+        </div>
+        {progress.stage ? (
+          <div className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
+            {progress.stage}
+          </div>
+        ) : null}
+        <div className="h-1.5 rounded-full mb-2" style={{ background: "var(--border-color)" }}>
+          <div
+            className="h-1.5 rounded-full transition-all"
+            style={{
+              width: `${Math.max(0, Math.min(100, progress.percent))}%`,
+              background: progressBarColor,
+            }}
+          />
+        </div>
+        <div className="grid gap-1">
+          {progress.files.map((file) => (
+            <div key={file.fileName} className="flex items-center justify-between text-xs gap-2">
+              <span className="flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    color: statusColorMap[file.status] ?? "var(--text-secondary)",
+                    fontWeight: 700,
+                    lineHeight: 1,
+                  }}
+                >
+                  {statusIconMap[file.status] ?? "○"}
+                </span>
+                <span>{file.fileName}</span>
+              </span>
+              <span style={{ color: statusColorMap[file.status] ?? "var(--text-secondary)" }}>
+                {file.stage} · {Math.max(0, Math.min(100, file.percent))}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end mb-6 animate-fade-in">
@@ -240,7 +411,17 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             border: "1px solid var(--border-color)",
           }}
         >
-          {message.content}
+          <div className="whitespace-pre-wrap">{message.content}</div>
+          {renderUploadProgress()}
+          {renderBundleActions()}
+          {renderStatusDetails()}
+          {!message.isStreaming && message.uploadSummaries && message.uploadSummaries.length > 0 && (
+            <div className="mt-3 grid gap-3">
+              {message.uploadSummaries.map((summary) => (
+                <UploadSummaryCard key={`${summary.bundleId}-${summary.fileName}`} summary={summary} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -288,36 +469,13 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             }}
           />
 
-          {!message.isStreaming && message.bundleActions && message.bundleActions.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {message.bundleActions.map((a) => (
-                <button
-                  key={`${a.bundleId}-${a.label}-${a.action ?? "status"}`}
-                  type="button"
-                  onClick={() => {
-                    if (a.action === "rangeQuery") {
-                      window.open(
-                        `/temp/range-query?bundle_id=${encodeURIComponent(a.bundleId)}`,
-                        "_blank"
-                      );
-                      return;
-                    }
-                    window.dispatchEvent(
-                      new CustomEvent(FOTA_OPEN_BUNDLE_STATUS, { detail: a.bundleId })
-                    );
-                  }}
-                  className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-90"
-                  style={{
-                    background: "var(--accent-blue)",
-                    color: "#fff",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  {a.action === "rangeQuery"
-                    ? `打开「${a.label}」临时查询页`
-                    : `查看「${a.label}」摄取状态`}
-                </button>
+          {renderBundleActions()}
+          {renderStatusDetails()}
+
+          {!message.isStreaming && message.uploadSummaries && message.uploadSummaries.length > 0 && (
+            <div className="mt-3 grid gap-3">
+              {message.uploadSummaries.map((summary) => (
+                <UploadSummaryCard key={`${summary.bundleId}-${summary.fileName}`} summary={summary} />
               ))}
             </div>
           )}

@@ -1,22 +1,15 @@
 "use client";
 
 import { useRef, useState } from "react";
-import TaskStatusLookup from "@/components/TaskStatusLookup";
 
 interface InputBarProps {
   onSend: (message: string) => void;
   isRunning: boolean;
   onStop: () => void;
   onUploadFiles: (files: FileList | File[]) => Promise<void>;
-  uploadProgress?: {
-    active: boolean;
-    percent: number;
-    stage: string;
-    message: string;
-  };
 }
 
-export default function InputBar({ onSend, isRunning, onStop, onUploadFiles, uploadProgress }: InputBarProps) {
+export default function InputBar({ onSend, isRunning, onStop, onUploadFiles }: InputBarProps) {
   const [input, setInput] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -37,12 +30,10 @@ export default function InputBar({ onSend, isRunning, onStop, onUploadFiles, upl
   return (
     <div
       style={{
-        position: "sticky",
-        bottom: 0,
         width: "100%",
         padding: "8px 16px 16px",
         background: "var(--bg-primary)",
-        zIndex: 100,
+        borderTop: "1px solid var(--border-color)",
       }}
     >
       <form
@@ -79,8 +70,10 @@ export default function InputBar({ onSend, isRunning, onStop, onUploadFiles, upl
           multiple
           style={{ display: "none" }}
           onChange={async (e) => {
-            if (e.target.files) await handleFiles(e.target.files);
-            e.currentTarget.value = "";
+            const input = e.currentTarget;
+            const files = input.files;
+            if (files) await handleFiles(files);
+            input.value = "";
           }}
         />
         {/* + button */}
@@ -222,31 +215,6 @@ export default function InputBar({ onSend, isRunning, onStop, onUploadFiles, upl
           </button>
         )}
       </form>
-      {uploadProgress?.active ? (
-        <div style={{ maxWidth: "48rem", margin: "8px auto 0", color: "var(--text-secondary)", fontSize: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span>{uploadProgress.message || "处理中..."}</span>
-            <span>{Math.max(0, Math.min(100, uploadProgress.percent))}%</span>
-          </div>
-          {uploadProgress.stage ? (
-            <div style={{ marginBottom: 4, color: "var(--text-muted)" }}>
-              {uploadProgress.stage}
-            </div>
-          ) : null}
-          <div style={{ width: "100%", height: 6, background: "var(--border-color)", borderRadius: 999 }}>
-            <div
-              style={{
-                width: `${Math.max(0, Math.min(100, uploadProgress.percent))}%`,
-                height: "100%",
-                background: "var(--accent-blue)",
-                borderRadius: 999,
-                transition: "width 240ms ease",
-              }}
-            />
-          </div>
-        </div>
-      ) : null}
-      <TaskStatusLookup />
     </div>
   );
 }

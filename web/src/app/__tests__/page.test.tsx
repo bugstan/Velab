@@ -14,10 +14,69 @@ import { vi, describe, it, beforeEach, expect } from 'vitest'
 const mockFetch = vi.fn()
 global.fetch = mockFetch as unknown as typeof fetch
 
+const createSseResponse = (chunks: string[]) => {
+    const encodedChunks = chunks.map((chunk) => new TextEncoder().encode(chunk))
+    const queue = [...encodedChunks]
+    const reader = {
+        read: vi.fn().mockImplementation(async () => {
+            if (queue.length === 0) {
+                return { done: true, value: undefined }
+            }
+            return { done: false, value: queue.shift() }
+        }),
+    }
+    return {
+        ok: true,
+        body: {
+            getReader: () => reader,
+        },
+    }
+}
+
+const setupFetchMock = (chatResponse?: unknown, sessions: unknown[] = []) => {
+    mockFetch.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string'
+            ? input
+            : input instanceof URL
+                ? input.toString()
+                : input.url
+        const method = (init?.method || 'GET').toUpperCase()
+
+        if (url.includes('/api/sessions') && method === 'GET') {
+            return {
+                ok: true,
+                json: async () => sessions,
+            } as Response
+        }
+
+        if (url.includes('/api/sessions/') && method === 'PUT') {
+            return {
+                ok: true,
+                json: async () => ({}),
+            } as Response
+        }
+
+        if (url.includes('/api/sessions/') && method === 'DELETE') {
+            return {
+                ok: true,
+                status: 204,
+                json: async () => ({}),
+            } as Response
+        }
+
+        if (chatResponse) {
+            return chatResponse as Response
+        }
+        return createSseResponse([]) as unknown as Response
+    })
+}
+
 describe('Home Page Integration Tests', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         mockFetch.mockClear()
+        window.localStorage.clear()
+        setupFetchMock()
     })
 
     describe('初始渲染', () => {
@@ -39,6 +98,12 @@ describe('Home Page Integration Tests', () => {
             expect(screen.getByPlaceholderText('Ask a question')).toBeInTheDocument()
         })
 
+        it('不应渲染 Bundle 摄取状态面板', () => {
+            render(<Home />)
+
+            expect(screen.queryByText('Bundle 摄取状态')).not.toBeInTheDocument()
+        })
+
         it('应该显示所有预设问题', () => {
             render(<Home />)
 
@@ -46,31 +111,18 @@ describe('Home Page Integration Tests', () => {
                 expect(screen.getByText(question.text)).toBeInTheDocument()
             })
         })
+
     })
 
     describe('发送消息流程', () => {
         it('点击预设问题应该发送消息', async () => {
             const user = userEvent.setup()
 
-            // Mock SSE response
-            const mockReader = {
-                read: vi.fn()
-                    .mockResolvedValueOnce({
-                        done: false,
-                        value: new TextEncoder().encode('data: {"type":"content_delta","content":"Test"}\n\n'),
-                    })
-                    .mockResolvedValueOnce({
-                        done: true,
-                        value: undefined,
-                    }),
-            }
-
-                mockFetch.mockResolvedValue({
-                    ok: true,
-                    body: {
-                        getReader: () => mockReader,
-                    },
-                })
+            setupFetchMock(
+                createSseResponse([
+                    'data: {"type":"content_delta","content":"Test"}\n\n',
+                ])
+            )
 
             render(<Home />)
 
@@ -81,31 +133,18 @@ describe('Home Page Integration Tests', () => {
 
             // 应该显示用户消息
             await waitFor(() => {
-                expect(screen.getByText(firstQuestion.text)).toBeInTheDocument()
+                expect(screen.getAllByText(firstQuestion.text).length).toBeGreaterThan(0)
             })
         })
 
         it('通过输入框发送消息', async () => {
             const user = userEvent.setup()
 
-            const mockReader = {
-                read: vi.fn()
-                    .mockResolvedValueOnce({
-                        done: false,
-                        value: new TextEncoder().encode('data: {"type":"content_delta","content":"Response"}\n\n'),
-                    })
-                    .mockResolvedValueOnce({
-                        done: true,
-                        value: undefined,
-                    }),
-            }
-
-                mockFetch.mockResolvedValue({
-                    ok: true,
-                    body: {
-                        getReader: () => mockReader,
-                    },
-                })
+            setupFetchMock(
+                createSseResponse([
+                    'data: {"type":"content_delta","content":"Response"}\n\n',
+                ])
+            )
 
             render(<Home />)
 
@@ -117,23 +156,14 @@ describe('Home Page Integration Tests', () => {
 
             // 应该显示用户消息
             await waitFor(() => {
-                expect(screen.getByText('Test question')).toBeInTheDocument()
+                expect(screen.getAllByText('Test question').length).toBeGreaterThan(0)
             })
         })
 
         it('发送消息后应该隐藏 WelcomePage', async () => {
             const user = userEvent.setup()
 
-            const mockReader = {
-                read: vi.fn().mockResolvedValue({ done: true, value: undefined }),
-            }
-
-                mockFetch.mockResolvedValue({
-                    ok: true,
-                    body: {
-                        getReader: () => mockReader,
-                    },
-                })
+            setupFetchMock(createSseResponse([]))
 
             render(<Home />)
 
@@ -148,19 +178,10 @@ describe('Home Page Integration Tests', () => {
     })
 
     describe('场景切换', () => {
-        it('切换场景应该清空消息历史', async () => {
+        it('切换场景不应清空当前会话消息', async () => {
             const user = userEvent.setup()
 
-            const mockReader = {
-                read: vi.fn().mockResolvedValue({ done: true, value: undefined }),
-            }
-
-                mockFetch.mockResolvedValue({
-                    ok: true,
-                    body: {
-                        getReader: () => mockReader,
-                    },
-                })
+            setupFetchMock(createSseResponse([]))
 
             render(<Home />)
 
@@ -169,7 +190,7 @@ describe('Home Page Integration Tests', () => {
             await user.type(input, 'Test message{Enter}')
 
             await waitFor(() => {
-                expect(screen.getByText('Test message')).toBeInTheDocument()
+                expect(screen.getAllByText('Test message').length).toBeGreaterThan(0)
             })
 
             // 切换场景
@@ -179,10 +200,9 @@ describe('Home Page Integration Tests', () => {
             const nextScenario = screen.getByText(DEMO_SCENARIOS[1].name)
             await user.click(nextScenario)
 
-            // 消息应该被清空，WelcomePage 应该重新显示
+            // 当前会话消息应保留
             await waitFor(() => {
-                expect(screen.queryByText('Test message')).not.toBeInTheDocument()
-                expect(screen.getByText('What are you working on?')).toBeInTheDocument()
+                expect(screen.getAllByText('Test message').length).toBeGreaterThan(0)
             })
         })
     })
@@ -333,16 +353,7 @@ describe('Home Page Integration Tests', () => {
             const scrollIntoViewSpy = vi.fn()
             Element.prototype.scrollIntoView = scrollIntoViewSpy
 
-            const mockReader = {
-                read: vi.fn().mockResolvedValue({ done: true, value: undefined }),
-            }
-
-            mockFetch.mockResolvedValue({
-                ok: true,
-                body: {
-                    getReader: () => mockReader,
-                },
-            })
+            setupFetchMock(createSseResponse([]))
 
             render(<Home />)
 
@@ -351,7 +362,7 @@ describe('Home Page Integration Tests', () => {
 
             // 等待消息显示
             await waitFor(() => {
-                expect(screen.getByText('Test')).toBeInTheDocument()
+                expect(screen.getAllByText('Test').length).toBeGreaterThan(0)
             })
 
             // scrollIntoView 应该被调用
@@ -365,10 +376,10 @@ describe('Home Page Integration Tests', () => {
         it('应该处理空响应体', async () => {
             const user = userEvent.setup()
 
-                mockFetch.mockResolvedValue({
-                    ok: true,
-                    body: null,
-                })
+            setupFetchMock({
+                ok: true,
+                body: null,
+            } as Response)
 
             render(<Home />)
 
@@ -377,7 +388,7 @@ describe('Home Page Integration Tests', () => {
 
             // 应该正常处理，不崩溃
             await waitFor(() => {
-                expect(screen.getByText('Test')).toBeInTheDocument()
+                expect(screen.getAllByText('Test').length).toBeGreaterThan(0)
             })
         })
 

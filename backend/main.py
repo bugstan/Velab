@@ -52,6 +52,7 @@ from api import api_router
 
 # 导入数据库管理器
 from database import db_manager
+from services.llm import log_llm_route_on_startup
 
 # log_pipeline state 初始化函数（在 lifespan 中调用）
 from log_pipeline.api.http import init_app_state as init_log_pipeline_state
@@ -82,6 +83,9 @@ async def lifespan(app: FastAPI):
     log.info("Initializing log_pipeline state...")
     init_log_pipeline_state(app)
     log.info("log_pipeline state initialized")
+
+    # 启动即打印最终 LLM 路由决策，便于排查是否走 gateway / 直连
+    log_llm_route_on_startup()
 
     yield  # 应用运行中
 
