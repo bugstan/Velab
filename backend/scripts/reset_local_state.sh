@@ -57,6 +57,15 @@ set +e
   2>/dev/null
 set -e
 
+echo "==> PostgreSQL: 确保 pg_trgm 扩展与 GIN 索引存在（已有则忽略）"
+export PGPASSWORD="$PG_PASS"
+"$PSQL_BIN" -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" \
+    -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" 2>&1 || true
+# CONCURRENTLY 不能在事务块内，用独立的 psql 调用
+"$PSQL_BIN" -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" \
+    -c "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_diagnosis_events_message_gin_trgm
+        ON diagnosis_events USING gin (message gin_trgm_ops);" 2>&1 || true
+
 echo "==> Redis: 清空当前 DB（含 arq:queue、arq:job:*、task_progress:* 等）"
 "${VELAB_REDIS_CLI_ARR[@]}" FLUSHDB
 

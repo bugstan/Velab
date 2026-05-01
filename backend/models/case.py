@@ -39,8 +39,6 @@ class Case(Base):
     meta_data = Column('metadata', JSON, default=dict)
     
     # 关系
-    log_files = relationship('RawLogFile', back_populates='case', cascade='all, delete-orphan')
-    events = relationship('DiagnosisEvent', back_populates='case', cascade='all, delete-orphan')
     diagnoses = relationship('ConfirmedDiagnosis', back_populates='case', cascade='all, delete-orphan')
     
     def __repr__(self) -> str:

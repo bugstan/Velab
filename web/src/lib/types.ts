@@ -25,10 +25,10 @@ export interface ThinkingProcessData {
   isExpanded: boolean;
 }
 
-/** 与日志上传 /api/parse 任务关联的快捷操作（在气泡内展示「查看状态」等） */
-export interface ParseTaskAction {
+/** 与 log_pipeline bundle 摄取关联的快捷操作（在气泡内展示「查看状态」等） */
+export interface BundleAction {
   label: string;
-  taskId: string;
+  bundleId: string;
 }
 
 export interface ChatMessage {
@@ -40,8 +40,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   sources?: SourceReference[];
   confidenceLevel?: string;
-  /** 有 Arq 任务时展示跳转到底栏状态查询的按钮 */
-  parseTaskActions?: ParseTaskAction[];
+  /** 有 bundle 摄取任务时展示跳转到底栏状态查询的按钮 */
+  bundleActions?: BundleAction[];
 }
 
 export interface SourceReference {

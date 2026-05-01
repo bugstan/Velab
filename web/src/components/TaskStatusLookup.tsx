@@ -2,94 +2,92 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const LS_KEY = "fota_last_parse_task_id";
+const LS_KEY = "fota_last_bundle_id";
 
 /** 从聊天记录等处跳转到底栏并拉取状态 */
-export const FOTA_OPEN_PARSE_TASK = "fota_open_parse_task";
+export const FOTA_OPEN_BUNDLE_STATUS = "fota_open_bundle_status";
 
-type ParseStatusPayload = {
-  task_id?: string;
-  status?: string;
-  progress?: { percent?: number; stage?: string; message?: string };
-  error?: string;
-  result?: {
-    total_files?: number;
-    parsed_files?: number;
-    total_events?: number;
-    failed_files?: number;
-    alignment_status?: string;
-    [key: string]: unknown;
-  };
-  enqueue_time?: string | null;
-  start_time?: string | null;
-  finish_time?: string | null;
+type BundleStatusPayload = {
+  bundle_id?: string;
+  status?: string;          // queued | extracting | decoding | prescanning | aligning | done | failed
+  progress?: number;        // 0.0 — 1.0
+  archive_filename?: string;
+  archive_size_bytes?: number;
+  error?: string | null;
+  file_count?: number;
+  files_by_controller?: Record<string, number>;
 };
 
-function formatStatus(p: ParseStatusPayload): string {
+function formatStatus(p: BundleStatusPayload): string {
   const lines: string[] = [];
   const st = p.status || "unknown";
   lines.push(`状态: ${st}`);
-  if (p.progress) {
-    const { percent, stage, message } = p.progress;
-    lines.push(
-      `进度: ${percent ?? 0}%  [${stage ?? "-"}] ${message ?? ""}`.trim()
-    );
+  if (typeof p.progress === "number") {
+    lines.push(`进度: ${(p.progress * 100).toFixed(1)}%`);
   }
-  if (p.enqueue_time) lines.push(`入队时间: ${p.enqueue_time}`);
-  if (p.start_time) lines.push(`开始时间: ${p.start_time}`);
-  if (p.finish_time) lines.push(`结束时间: ${p.finish_time}`);
+  if (p.archive_filename) lines.push(`文件: ${p.archive_filename}`);
+  if (typeof p.archive_size_bytes === "number") {
+    lines.push(`大小: ${(p.archive_size_bytes / (1024 * 1024)).toFixed(2)} MB`);
+  }
+  if (typeof p.file_count === "number") {
+    lines.push(`已分类文件: ${p.file_count}`);
+  }
+  if (p.files_by_controller && Object.keys(p.files_by_controller).length > 0) {
+    const parts = Object.entries(p.files_by_controller)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(", ");
+    lines.push(`按控制器: ${parts}`);
+  }
   if (p.error) lines.push(`错误: ${p.error}`);
-  if (p.result && st === "completed") {
-    const r = p.result;
-    lines.push(
-      `结果: 解压 ${r.total_files ?? 0} 个文件, 成功解析 ${r.parsed_files ?? 0}, 事件数 ${r.total_events ?? 0}, 对齐 ${r.alignment_status ?? "-"}`
-    );
-  }
   return lines.join("\n");
 }
 
-const TASK_EVENT = "fota_last_parse_task_id";
+const BUNDLE_EVENT = "fota_last_bundle_id";
 
-export function rememberLastParseTaskId(taskId: string) {
-  if (typeof window === "undefined" || !taskId) return;
+export function rememberLastBundleId(bundleId: string) {
+  if (typeof window === "undefined" || !bundleId) return;
   try {
-    sessionStorage.setItem(LS_KEY, taskId);
-    window.dispatchEvent(new CustomEvent(TASK_EVENT, { detail: taskId }));
+    sessionStorage.setItem(LS_KEY, bundleId);
+    window.dispatchEvent(new CustomEvent(BUNDLE_EVENT, { detail: bundleId }));
   } catch {
     /* ignore */
   }
 }
 
 /**
- * 底部栏：用 task_id 轮询/查询 Arq 解析任务状态（走 Next /api/parse-status）。
+ * 底部栏：用 bundle_id 查询 log_pipeline 摄取状态（走 Next /api/bundle-status）。
  */
 export default function TaskStatusLookup() {
-  const [taskId, setTaskId] = useState("");
+  const [bundleId, setBundleId] = useState("");
   const [resultText, setResultText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   const fetchStatus = useCallback(async (id: string) => {
-    const tid = id.trim();
-    if (!tid) {
-      setResultText("请填写任务 ID。");
+    const bid = id.trim();
+    if (!bid) {
+      setResultText("请填写 bundle ID。");
       return;
     }
     setLoading(true);
     setResultText(null);
     try {
-      const res = await fetch(`/api/parse-status/${encodeURIComponent(tid)}`);
+      const res = await fetch(`/api/bundle-status/${encodeURIComponent(bid)}`);
       const text = await res.text();
-      let data: ParseStatusPayload;
+      let data: BundleStatusPayload;
       try {
-        data = JSON.parse(text) as ParseStatusPayload;
+        data = JSON.parse(text) as BundleStatusPayload;
       } catch {
         setResultText(`查询失败 (HTTP ${res.status}): ${text.slice(0, 200)}`);
         return;
       }
       if (!res.ok) {
-        setResultText(`查询失败: ${(data as { detail?: string }).detail || text || res.status}`);
+        const errPayload = data as { detail?: string; error?: { message?: string } | string | null };
+        const errStr = typeof errPayload.error === "object" && errPayload.error
+          ? errPayload.error.message
+          : (typeof errPayload.error === "string" ? errPayload.error : undefined);
+        setResultText(`查询失败: ${errPayload.detail || errStr || text || res.status}`);
         return;
       }
       setResultText(formatStatus(data));
@@ -111,20 +109,20 @@ export default function TaskStatusLookup() {
       const id = (e as CustomEvent<string>).detail;
       if (id) setLastSaved(id);
     };
-    window.addEventListener(TASK_EVENT, onNew);
+    window.addEventListener(BUNDLE_EVENT, onNew);
     const onOpen = (e: Event) => {
       const id = (e as CustomEvent<string>).detail?.trim();
       if (!id) return;
-      setTaskId(id);
+      setBundleId(id);
       void fetchStatus(id);
       requestAnimationFrame(() => {
         panelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
     };
-    window.addEventListener(FOTA_OPEN_PARSE_TASK, onOpen);
+    window.addEventListener(FOTA_OPEN_BUNDLE_STATUS, onOpen);
     return () => {
-      window.removeEventListener(TASK_EVENT, onNew);
-      window.removeEventListener(FOTA_OPEN_PARSE_TASK, onOpen);
+      window.removeEventListener(BUNDLE_EVENT, onNew);
+      window.removeEventListener(FOTA_OPEN_BUNDLE_STATUS, onOpen);
     };
   }, [fetchStatus]);
 
@@ -143,12 +141,12 @@ export default function TaskStatusLookup() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>解析任务状态</span>
+        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>Bundle 摄取状态</span>
         <input
           type="text"
-          value={taskId}
-          onChange={(e) => setTaskId(e.target.value)}
-          placeholder="task_id"
+          value={bundleId}
+          onChange={(e) => setBundleId(e.target.value)}
+          placeholder="bundle_id"
           style={{
             flex: "1 1 200px",
             minWidth: 0,
@@ -164,7 +162,7 @@ export default function TaskStatusLookup() {
         <button
           type="button"
           disabled={loading}
-          onClick={() => void fetchStatus(taskId)}
+          onClick={() => void fetchStatus(bundleId)}
           style={{
             padding: "6px 12px",
             borderRadius: 8,
@@ -183,7 +181,7 @@ export default function TaskStatusLookup() {
           <button
             type="button"
             onClick={() => {
-              setTaskId(lastSaved);
+              setBundleId(lastSaved);
               void fetchStatus(lastSaved);
             }}
             style={{
@@ -201,7 +199,7 @@ export default function TaskStatusLookup() {
         ) : null}
       </div>
       <p style={{ margin: 0, fontSize: 11, opacity: 0.85, lineHeight: 1.45 }}>
-        大文件可能超过 4 分钟，界面会提前结束等待；可点上一条「日志上传结果」里的「查看状态」跳转到此并查询，或在此输入 task_id 后点「查询」。
+        大文件可能超过 4 分钟，界面会提前结束等待；可点上一条「日志上传结果」里的「查看状态」跳转到此并查询，或在此输入 bundle_id 后点「查询」。
       </p>
       {resultText ? (
         <pre

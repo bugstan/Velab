@@ -93,6 +93,10 @@ velab_run_psql_admin <<-EOSQL
     -- (2) 检查数据库是否存在，不存在则创建
     SELECT 'CREATE DATABASE ${DB_NAME} OWNER ${DB_USER}'
     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\\gexec
+
+    -- (3) 在目标库中启用 pg_trgm（message 列 GIN 索引依赖此扩展）
+    \c ${DB_NAME}
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
 EOSQL
 
     echo -e "${GREEN}✓ 数据库及用户基础设施准备完毕！${NC}"

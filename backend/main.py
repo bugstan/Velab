@@ -53,6 +53,9 @@ from api import api_router
 # 导入数据库管理器
 from database import db_manager
 
+# log_pipeline state 初始化函数（在 lifespan 中调用）
+from log_pipeline.api.http import init_app_state as init_log_pipeline_state
+
 # 初始化日志系统
 setup_logging()
 
@@ -67,10 +70,18 @@ async def lifespan(app: FastAPI):
     db_manager.initialize()
     log.info("Database connection pool initialized")
 
+    log.info("Creating database tables (if not exist)...")
+    db_manager.create_tables()
+    log.info("Database tables ready")
+
     log.info("Initializing task client...")
     from tasks.client import get_task_client
     await get_task_client()
     log.info("Task client initialized")
+
+    log.info("Initializing log_pipeline state...")
+    init_log_pipeline_state(app)
+    log.info("log_pipeline state initialized")
 
     yield  # 应用运行中
 
@@ -103,6 +114,10 @@ app.add_middleware(
 
 # 注册API路由
 app.include_router(api_router)
+
+# log_pipeline 的 Prometheus /metrics 端点（不带 /api 前缀）
+from api import metrics_router  # noqa: E402
+app.include_router(metrics_router)
 
 
 @app.get("/")

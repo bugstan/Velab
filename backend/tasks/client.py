@@ -45,43 +45,6 @@ class TaskClient:
             self._pool = None
             logger.info("任务客户端已关闭")
     
-    async def submit_parse_task(
-        self,
-        case_id: str,
-        file_ids: list[str],
-        time_window_start: Optional[str] = None,
-        time_window_end: Optional[str] = None,
-        max_lines_per_file: Optional[int] = None,
-    ) -> str:
-        """
-        提交日志解析任务
-        
-        Args:
-            case_id: 案例ID
-            file_ids: 待解析的日志文件ID列表
-            time_window_start: 时间窗口起始（ISO格式）
-            time_window_end: 时间窗口结束（ISO格式）
-            max_lines_per_file: 每个文件最大解析行数
-        
-        Returns:
-            str: 任务ID
-        """
-        if not self._pool:
-            await self.initialize()
-        
-        job = await self._pool.enqueue_job(
-            "parse_logs_task",
-            case_id,
-            file_ids,
-            time_window_start,
-            time_window_end,
-            max_lines_per_file,
-        )
-        
-        task_id = job.job_id
-        logger.info(f"已提交解析任务: {task_id}, Case: {case_id}, Files: {len(file_ids)}")
-        return task_id
-
     async def submit_bundle_task(
         self,
         case_id: str,

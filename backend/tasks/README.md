@@ -2,71 +2,63 @@
 
 ## 概述
 
-本系统使用 **Arq** (基于Redis) 实现异步任务队列，用于处理耗时的日志解析任务。
+本系统使用 **Arq**（基于 Redis）实现异步任务队列。当前唯一的业务任务是 `parse_bundle_task` —— 它是 [`log_pipeline.IngestPipeline`](../log_pipeline/CLAUDE.md) 的薄包装，负责接管整车日志压缩包的全链路摄取（解压 → 分类 → 解码 → 单遍预扫描 → 时间对齐 → 持久化）。
+
+进度（status / progress 0–1）由 Worker 后台任务**每 1 秒**从 SQLite catalog 中读取并写入 Redis 键 `task_progress:{task_id}`，前端按 `bundle_id` 直接轮询 `/api/bundles/{id}` 即可拿到 `progress`、`status`、`files_by_controller` 等结构化字段（不再依赖 `task_id`）。
 
 ## 架构
 
 ```
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   FastAPI   │─────▶│    Redis    │◀─────│ Arq Worker  │
-│   (API)     │      │   (Queue)   │      │  (Process)  │
-└─────────────┘      └─────────────┘      └─────────────┘
-     提交任务            任务队列            执行任务
+┌──────────────┐  POST /api/bundles  ┌──────────────┐  enqueue   ┌──────────────┐
+│   Frontend   │ ──────────────────▶ │  FastAPI app │ ─────────▶ │    Redis     │
+└──────────────┘                     └──────────────┘            │  (Arq queue) │
+        │                                    │                   └──────┬───────┘
+        │ poll /api/bundles/{id}             │ background_tasks         │
+        │       (every 1s)                   ▼                          │ pop
+        │                            ┌──────────────┐         ┌────────▼────────┐
+        └──────────────────────────▶ │ SQLite       │◀────────│   Arq Worker    │
+                                     │ catalog.db   │  write  │  parse_bundle_  │
+                                     │ (progress,   │  status │  task           │
+                                     │  events,     │         │  → IngestPipeline│
+                                     │  meta)       │         └─────────────────┘
+                                     └──────────────┘
 ```
 
-## 组件说明
+> 注：FastAPI app 在 `BackgroundTasks` 中也会直接跑同一份 `IngestPipeline.run` —— 这是 log_pipeline 自己的 `/api/bundles` 路由提供的同步路径（用于无 Arq 部署）。生产环境推荐用 Arq Worker，避免阻塞 HTTP 进程。
 
-### 1. 任务定义 (`tasks/worker.py`)
+## 组件
 
-- **parse_logs_task**: 异步日志解析任务
-  - 解析多个日志文件
-  - 批量插入事件到数据库
-  - 执行时间对齐
-  - 支持失败重试
+### `tasks/worker.py`
 
-- **cleanup_old_tasks**: 定时清理任务（示例）
+| 名字 | 作用 |
+|---|---|
+| `parse_bundle_task(ctx, case_id, upload_path, upload_name)` | Arq 任务函数。`asyncio.to_thread(pipeline.run, ...)` 跑解析；并行起一个 `_poll_progress()` task 把 catalog 中的进度写回 Redis |
+| `WorkerSettings` | Arq Worker 配置：Redis 连接、`functions=[parse_bundle_task]`、`max_jobs=10`、`job_timeout=3600`、`max_tries=3` |
+| `cleanup_old_tasks` | 占位定时任务（cron 每天 02:00） |
 
-### 2. 任务客户端 (`tasks/client.py`)
+### `tasks/client.py`
 
-- **TaskClient**: 任务提交和查询接口
-  - `submit_parse_task()`: 提交解析任务
-  - `get_task_status()`: 查询任务状态
-  - `cancel_task()`: 取消任务
-  - `get_queue_info()`: 获取队列信息
+| 方法 | 作用 |
+|---|---|
+| `submit_bundle_task(case_id, upload_path, upload_name) → task_id` | 入队 + 写初始 `task_progress:{task_id}={percent:5, stage:"queued"}` |
+| `get_task_status(task_id)` | 读 Arq job 状态 + Redis 中的 progress；返回 `{task_id, status, enqueue_time, start_time, finish_time, progress, result?, error?}` |
+| `cancel_task(task_id)` | `Job(task_id).abort()` |
+| `get_queue_info()` | `ZCARD arq:queue` 等队列统计 |
 
-### 3. Worker配置 (`tasks/worker.py`)
-
-```python
-class WorkerSettings:
-    redis_settings = RedisSettings(host="localhost", port=6379)
-    max_jobs = 10              # 最大并发任务数
-    job_timeout = 3600         # 任务超时时间（秒）
-    keep_result = 86400        # 保留任务结果时间（秒）
-    max_tries = 3              # 最大重试次数
-```
+> ⚠️ Frontend 现在统一走 `/api/bundles/{bundle_id}` 拉状态，不再用 `get_task_status` —— 后者保留是为了排查/管理用途。`bundle_id`（log_pipeline 分配的 UUID）和 Arq `task_id` 是两个独立 ID，可通过 `parse_bundle_task` 的返回值 `result.bundle_id` 关联。
 
 ## 使用方法
 
-### 启动Worker
-
-#### 方法1: 使用Python脚本
+### 启动 Worker
 
 ```bash
-cd backend
-python run_worker.py
-```
+# 方式 1：启动脚本
+cd backend && python run_worker.py
 
-#### 方法2: 使用arq命令
+# 方式 2：arq CLI
+cd backend && arq tasks.worker.WorkerSettings
 
-```bash
-cd backend
-arq tasks.worker.WorkerSettings
-```
-
-#### 方法3: 使用systemd服务（生产环境）
-
-```bash
-# 创建systemd服务文件
+# 方式 3：systemd（生产）
 sudo nano /etc/systemd/system/fota-worker.service
 ```
 
@@ -78,9 +70,10 @@ After=network.target redis.service postgresql.service
 [Service]
 Type=simple
 User=fota
-WorkingDirectory=/opt/fota/backend
-Environment="PATH=/opt/fota/venv/bin"
-ExecStart=/opt/fota/venv/bin/python run_worker.py
+WorkingDirectory=/opt/fota-backend
+Environment="PATH=/opt/fota-backend/venv/bin"
+Environment="LOG_PIPELINE_DATA_ROOT=/var/lib/fota/data"
+ExecStart=/opt/fota-backend/venv/bin/python run_worker.py
 Restart=always
 RestartSec=10
 
@@ -89,207 +82,167 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-# 启动服务
 sudo systemctl daemon-reload
-sudo systemctl enable fota-worker
-sudo systemctl start fota-worker
-
-# 查看状态
+sudo systemctl enable --now fota-worker
 sudo systemctl status fota-worker
-
-# 查看日志
 sudo journalctl -u fota-worker -f
 ```
 
-### API使用示例
+### API 调用示例
 
-#### 1. 提交解析任务
+#### 1. 上传 bundle（提交 Arq 任务）
+
+通过 `/api/bundles` 上传时，FastAPI 会**直接同步起一个 BackgroundTask** 调用 `IngestPipeline`，不走 Arq。要走 Arq 队列，前端调用 `/api/upload-log`，由 Web 中转层走 `task_client.submit_bundle_task` 入队。
 
 ```bash
-curl -X POST "http://localhost:8000/api/parse/submit" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "case_id": "case_001",
-    "file_ids": ["file_001", "file_002"],
-    "time_window_start": "2024-01-01T00:00:00",
-    "time_window_end": "2024-01-01T23:59:59",
-    "max_lines_per_file": 100000
-  }'
+curl -F "file=@/path/to/bundle.zip" http://localhost:8000/api/bundles
+# → {"bundle_id": "550e8400-e29b-41d4-a716-446655440000", "status": "queued"}
 ```
 
-响应:
+#### 2. 查询进度（前端推荐路径 —— 直接读 catalog）
+
+```bash
+curl http://localhost:8000/api/bundles/550e8400-e29b-41d4-a716-446655440000
+```
+
 ```json
 {
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "case_id": "case_001",
-  "status": "pending",
-  "total_files": 2,
-  "parsed_files": 0,
-  "failed_files": 0,
-  "total_events": 0,
-  "created_at": "2024-01-01T10:00:00",
-  "updated_at": "2024-01-01T10:00:00"
+  "bundle_id": "550e8400-...",
+  "status": "prescanning",
+  "progress": 0.83,
+  "archive_filename": "20260430_demo.zip",
+  "archive_size_bytes": 1342177280,
+  "error": null,
+  "file_count": 142,
+  "files_by_controller": {"android": 98, "tbox": 12, "mcu": 18, "kernel": 8, "ibdu": 6}
 }
 ```
 
-#### 2. 查询任务状态
+#### 3. 任务级状态（Arq 视角，运维用）
 
 ```bash
-curl "http://localhost:8000/api/parse/status/550e8400-e29b-41d4-a716-446655440000"
+# 不直接暴露 HTTP；通过 Python REPL：
+python -c "
+import asyncio
+from tasks.client import get_task_client
+async def main():
+    tc = await get_task_client()
+    print(await tc.get_task_status('arq-job-id-xxx'))
+asyncio.run(main())
+"
 ```
 
-响应（进行中）:
-```json
-{
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "running",
-  "enqueue_time": "2024-01-01T10:00:00",
-  "start_time": "2024-01-01T10:00:05",
-  "finish_time": null
-}
-```
+## 状态映射
 
-响应（已完成）:
-```json
-{
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "completed",
-  "enqueue_time": "2024-01-01T10:00:00",
-  "start_time": "2024-01-01T10:00:05",
-  "finish_time": "2024-01-01T10:05:30",
-  "result": {
-    "case_id": "case_001",
-    "total_files": 2,
-    "parsed_files": 2,
-    "failed_files": 0,
-    "total_events": 15234,
-    "status": "completed"
-  }
-}
-```
+`/api/bundles/{id}.status` 直接来自 log_pipeline 的 `BundleStatus` 枚举，按阶段递进：
 
-## 任务状态说明
+| status | 进度区间（progress） | 说明 |
+|---|---|---|
+| `queued` | 0.05 | 任务已入队，待执行 |
+| `extracting` | 0.05 → 0.4 | 解压 + 分类 + 落盘 |
+| `decoding` | 0.4 → 0.7 | DLT/文本 解码（细粒度刷新，每 1% 写一次） |
+| `prescanning` | 0.7 → 0.9 | 单遍扫描：事件 + 锚点 + 桶索引（细粒度刷新） |
+| `aligning` | 0.9 → 1.0 | 时间对齐 + 异常检测 |
+| `done` | 1.0 | 全部完成 |
+| `failed` | （任意点） | 见 `error` 字段 |
 
-| 状态 | 说明 |
-|------|------|
-| `pending` | 任务已提交，等待执行 |
-| `running` | 任务正在执行中 |
-| `completed` | 任务执行成功 |
-| `failed` | 任务执行失败 |
-| `not_found` | 任务不存在或已过期 |
+Arq 任务的状态映射（`get_task_status`）：
 
-## 监控和调试
+| Arq | client.py 输出 |
+|---|---|
+| `queued / deferred` | `pending` |
+| `in_progress` | `running` |
+| `complete` | `completed` |
+| `not_found` | `not_found` |
 
-### 查看Redis队列
+## 监控 / 调试
+
+### 查 Redis 队列
 
 ```bash
-# 连接Redis
-redis-cli
-
-# 查看队列长度
-ZCARD arq:queue
-
-# 查看队列中的任务
-ZRANGE arq:queue 0 -1 WITHSCORES
-
-# 查看任务详情
-GET arq:result:{task_id}
+redis-cli ZCARD arq:queue                                    # 队列长度
+redis-cli ZRANGE arq:queue 0 -1 WITHSCORES                   # 待执行任务
+redis-cli GET task_progress:<task_id>                        # 当前进度（JSON 字符串）
+redis-cli GET arq:result:<task_id>                           # 最终结果（pickled）
 ```
 
-### Worker日志
-
-Worker会输出详细的日志信息：
+### Worker 日志样例
 
 ```
-2024-01-01 10:00:05 - tasks.worker - INFO - 开始解析任务 - Case: case_001, Files: 2
-2024-01-01 10:00:10 - tasks.worker - INFO - 文件解析完成: file_001, 事件数: 7500
-2024-01-01 10:00:15 - tasks.worker - INFO - 文件解析完成: file_002, 事件数: 7734
-2024-01-01 10:00:20 - tasks.worker - INFO - 开始时间对齐 - Case: case_001
-2024-01-01 10:00:25 - tasks.worker - INFO - 时间对齐完成 - Case: case_001, 状态: ALIGNED
-2024-01-01 10:00:30 - tasks.worker - INFO - 解析任务完成 - {...}
+2026-04-30 10:00:05  INFO  ingest_pipeline  upload archive='demo.zip' size=1342177280
+2026-04-30 10:00:05  INFO  ingest_pipeline  extract+classify+store START
+2026-04-30 10:01:20  INFO  ingest_pipeline  decode counts={'DLTDecoder': 12, 'AndroidLogcatDecoder': 98, ...}
+2026-04-30 10:02:45  INFO  ingest_pipeline  prescan events=15234 anchors=412 indexed_files=132 unsynced_files=4 workers=8
+2026-04-30 10:03:10  INFO  ingest_pipeline  alignment direct=4 two_hop=2 fallback=0 status=success
+2026-04-30 10:03:11  INFO  tasks.worker     bundle done bundle_id=550e8400-... case=demo_case
 ```
 
 ## 性能优化
 
-### 1. 调整并发数
-
-根据服务器资源调整 `max_jobs`:
+### 1. 调整并发任务数
 
 ```python
 # tasks/worker.py
 class WorkerSettings:
-    max_jobs = 20  # 增加并发数
+    max_jobs = 20          # 默认 10
 ```
 
-### 2. 多Worker实例
-
-启动多个Worker进程以提高吞吐量:
+### 2. 多 Worker 实例
 
 ```bash
-# 启动3个Worker实例
+# 横向扩展，共享同一个 Redis 队列；每个 Worker 仍独立访问 SQLite catalog（WAL 模式可并发读，写仍需序列化）
 python run_worker.py &
 python run_worker.py &
 python run_worker.py &
 ```
 
-### 3. 批量大小优化
+> ⚠️ 多 Worker 同时写同一个 `catalog.db` 会因 SQLite 单写锁串行化。生产建议：要么单 Worker + 单 SQLite，要么按 bundle 分片到多 SQLite（每分片一个 catalog）。
 
-调整批量插入大小:
+### 3. 单 bundle 内的并行度
 
-```python
-# 在parse_logs_task中
-inserted_count = BatchOperations.bulk_insert_events(db, event_dicts, batch_size=2000)
-```
+预扫描阶段已用 `ProcessPoolExecutor`（fork ctx）按文件并发，worker 数 = `os.cpu_count()`。无需在任务层再加并行。
 
 ## 故障排查
 
-### 问题1: Worker无法连接Redis
-
-**症状**: Worker启动失败，提示连接错误
-
-**解决**:
+### 1. Worker 无法连接 Redis
 ```bash
-# 检查Redis是否运行
 sudo systemctl status redis
-
-# 检查Redis配置
-redis-cli ping
-
-# 检查环境变量
-echo $REDIS_HOST
-echo $REDIS_PORT
+redis-cli ping                                  # 应返回 PONG
+echo $REDIS_HOST $REDIS_PORT
 ```
 
-### 问题2: 任务一直处于pending状态
+### 2. 任务一直 `queued`
+- Worker 没启 → `sudo systemctl status fota-worker`
+- Redis 不通 → `redis-cli ping`
+- Worker 日志看错误 → `journalctl -u fota-worker -n 100`
 
-**症状**: 任务提交后长时间不执行
+### 3. 任务执行失败（`failed`）
+- 看 `result.error` 字段
+- 查 SQLite catalog：`sqlite3 data/catalog.db "SELECT bundle_id,status,error FROM bundles ORDER BY updated_at DESC LIMIT 5"`
+- 查 bundle 处理日志：`cat data/bundles/{bundle_id}/_processing.log`
 
-**解决**:
-1. 检查Worker是否运行
-2. 查看Worker日志是否有错误
-3. 检查Redis队列是否堵塞
+### 4. 进度长时间不动
+- catalog 卡在某阶段 → 看 `_processing.log` 的 stage 时间戳
+- decode 阶段慢 → 检查 DLT 文件大小 + decoder 吞吐
+- prescan 阶段慢 → 检查 worker 数与 CPU 使用率
 
-### 问题3: 任务执行失败
-
-**症状**: 任务状态变为failed
-
-**解决**:
-1. 查看任务结果中的error字段
-2. 检查Worker日志
-3. 验证数据库连接
-4. 检查文件路径是否正确
+### 5. SQLite "database is locked"
+- 多 Worker 并发写同一个 catalog → 串行化 / 分片
+- 检查是否有外部进程在持有数据库连接（`fuser data/catalog.db`）
 
 ## 最佳实践
 
-1. **生产环境使用systemd管理Worker**
-2. **配置合理的超时时间**（根据文件大小）
-3. **启用失败重试**（已默认启用，最多3次）
-4. **定期清理过期任务结果**
-5. **监控队列长度**，防止积压
-6. **使用Redis持久化**，防止任务丢失
+1. **生产环境用 systemd 管理 Worker**，配置 `Restart=always`
+2. **`job_timeout` 按最大 bundle 设置**：默认 3600s（1h）足够 2 GB bundle
+3. **`max_tries=3` + 失败重试默认开启** —— log_pipeline 是幂等的，重跑安全（但会复用旧 bundle_id 还是新分配，取决于上层入参；当前是新分配）
+4. **`task_progress:{id}` 设了 1h TTL**，超时后前端只能查 `/api/bundles/{id}` 拿状态（catalog 永久保留）
+5. **监控队列长度**：`ZCARD arq:queue` > 50 时考虑加 Worker
+6. **Redis 持久化打开**（AOF / RDB），防止任务丢失
+7. **大 bundle 上传走 Arq，小 bundle 直接走 BackgroundTasks**（HTTP 同步快，不占队列槽位）
 
 ## 相关文档
 
-- [Arq官方文档](https://arq-docs.helpmanual.io/)
-- [Redis文档](https://redis.io/documentation)
-- [FastAPI后台任务](https://fastapi.tiangolo.com/tutorial/background-tasks/)
+- [`../log_pipeline/CLAUDE.md`](../log_pipeline/CLAUDE.md) — 摄取管线设计契约（必读）
+- [Arq 官方文档](https://arq-docs.helpmanual.io/)
+- [Redis 文档](https://redis.io/documentation)
+- [FastAPI 后台任务](https://fastapi.tiangolo.com/tutorial/background-tasks/)

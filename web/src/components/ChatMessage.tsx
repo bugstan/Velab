@@ -24,7 +24,7 @@ import { ChatMessage as ChatMessageType } from "@/lib/types";
 import ThinkingProcess from "./ThinkingProcess";
 import FeedbackButtons from "./FeedbackButtons";
 import SourcePanel from "./SourcePanel";
-import { FOTA_OPEN_PARSE_TASK } from "@/components/TaskStatusLookup";
+import { FOTA_OPEN_BUNDLE_STATUS } from "@/components/TaskStatusLookup";
 
 /**
  * 组件属性接口
@@ -288,15 +288,15 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             }}
           />
 
-          {!message.isStreaming && message.parseTaskActions && message.parseTaskActions.length > 0 && (
+          {!message.isStreaming && message.bundleActions && message.bundleActions.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {message.parseTaskActions.map((a) => (
+              {message.bundleActions.map((a) => (
                 <button
-                  key={`${a.taskId}-${a.label}`}
+                  key={`${a.bundleId}-${a.label}`}
                   type="button"
                   onClick={() =>
                     window.dispatchEvent(
-                      new CustomEvent(FOTA_OPEN_PARSE_TASK, { detail: a.taskId })
+                      new CustomEvent(FOTA_OPEN_BUNDLE_STATUS, { detail: a.bundleId })
                     )
                   }
                   className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-90"
@@ -307,7 +307,7 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
                     cursor: "pointer",
                   }}
                 >
-                  查看「{a.label}」任务状态
+                  查看「{a.label}」摄取状态
                 </button>
               ))}
             </div>

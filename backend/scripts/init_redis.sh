@@ -111,6 +111,7 @@ if [ -z "$REDIS_URL" ]; then
     fi
     print_info "从 REDIS_HOST/PORT/PASSWORD 拼接 REDIS_URL: $REDIS_URL"
 fi
+export REDIS_URL
 
 # ============================================================================
 # Redis 初始化

@@ -32,7 +32,7 @@ import {
   AgentStep,
 } from "@/lib/types";
 import { parseSSEBuffer } from "@/lib/sseParse";
-import { rememberLastParseTaskId } from "@/components/TaskStatusLookup";
+import { rememberLastBundleId } from "@/components/TaskStatusLookup";
 
 
 /**
@@ -111,11 +111,10 @@ export default function Home() {
     if (fileArray.length === 0) return;
 
     const resultLines: string[] = [];
-    const parseTaskActions: { label: string; taskId: string }[] = [];
+    const bundleActions: { label: string; bundleId: string }[] = [];
     for (const file of fileArray) {
       const form = new FormData();
       form.append("file", file);
-      form.append("case_id", currentScenario.id);
 
       try {
         setUploadProgress({
@@ -130,53 +129,36 @@ export default function Home() {
         });
         const payload = await resp.json();
         if (!resp.ok) {
-          resultLines.push(`- ${file.name}: 上传失败 (${payload?.detail || payload?.error || resp.status})`);
+          resultLines.push(`- ${file.name}: 上传失败 (${payload?.detail || payload?.error?.message || payload?.error || resp.status})`);
           continue;
         }
-        const taskId = payload?.task_id;
-        if (!taskId) {
-          resultLines.push(`- ${file.name}: 提交任务失败（未返回 task_id）`);
+        const bundleId = payload?.bundle_id;
+        if (!bundleId) {
+          resultLines.push(`- ${file.name}: 提交失败（未返回 bundle_id）`);
           continue;
         }
-        rememberLastParseTaskId(taskId);
-        parseTaskActions.push({ label: file.name, taskId });
+        rememberLastBundleId(bundleId);
+        bundleActions.push({ label: file.name, bundleId });
 
         let finalStatus: {
           status?: string;
-          error?: string;
-          result?: {
-            total_files?: number;
-            parsed_files?: number;
-            total_events?: number;
-            alignment_status?: string;
-          };
-          progress?: {
-            percent?: number;
-            stage?: string;
-            message?: string;
-          };
+          progress?: number;
+          error?: string | null;
+          file_count?: number;
+          files_by_controller?: Record<string, number>;
         } | null = null;
         for (let i = 0; i < 240; i += 1) {
           await new Promise((r) => setTimeout(r, 1000));
-          const stResp = await fetch(`/api/parse-status/${taskId}`);
+          const stResp = await fetch(`/api/bundle-status/${bundleId}`);
           const stPayload = await stResp.json();
-          const p = stPayload?.progress;
-          if (p) {
-            setUploadProgress({
-              active: true,
-              percent: Number(p.percent ?? 0),
-              stage: String(p.stage ?? "running"),
-              message: String(p.message ?? "处理中"),
-            });
-          } else {
-            setUploadProgress({
-              active: true,
-              percent: 20,
-              stage: stPayload?.status || "running",
-              message: "处理中",
-            });
-          }
-          if (stPayload?.status === "completed" || stPayload?.status === "failed") {
+          const progress = typeof stPayload?.progress === "number" ? stPayload.progress : 0;
+          setUploadProgress({
+            active: true,
+            percent: Math.round(progress * 100),
+            stage: String(stPayload?.status ?? "running"),
+            message: "处理中",
+          });
+          if (stPayload?.status === "done" || stPayload?.status === "failed") {
             finalStatus = stPayload;
             break;
           }
@@ -194,9 +176,11 @@ export default function Home() {
           continue;
         }
 
-        const data = finalStatus?.result || {};
+        const ctrlSummary = finalStatus.files_by_controller
+          ? Object.entries(finalStatus.files_by_controller).map(([k, v]) => `${k}=${v}`).join(", ")
+          : "—";
         resultLines.push(
-          `- ${file.name}: 完成（解压文件 ${data.total_files ?? 0}，解析文件 ${data.parsed_files ?? 0}，事件 ${data.total_events ?? 0}，对齐 ${data.alignment_status ?? "UNKNOWN"}）`
+          `- ${file.name}: 完成（共 ${finalStatus.file_count ?? 0} 个文件；按控制器 ${ctrlSummary}）`
         );
       } catch (err) {
         resultLines.push(`- ${file.name}: 上传异常 (${(err as Error).message})`);
@@ -214,7 +198,7 @@ export default function Home() {
       role: "assistant",
       content: `日志上传处理结果：\n${resultLines.join("\n")}`,
       timestamp: new Date(),
-      ...(parseTaskActions.length > 0 ? { parseTaskActions } : {}),
+      ...(bundleActions.length > 0 ? { bundleActions } : {}),
     };
     setMessages((prev) => [...prev, uploadMessage]);
   };
