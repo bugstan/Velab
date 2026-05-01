@@ -10,6 +10,8 @@ from typing import Iterator, Optional
 from uuid import UUID
 
 from log_pipeline.interfaces import (
+    INVALID_TS_SENTINEL_2020_END,
+    MIN_VALID_TS,
     AlignmentMethod,
     BootSegment,
     BundleStatus,
@@ -361,17 +363,52 @@ class Catalog:
     def valid_time_range_by_controller(
         self, bundle_id: UUID
     ) -> dict[str, dict[str, Optional[float]]]:
-        """Aggregate per-controller valid timestamp range within one bundle."""
+        """Aggregate per-controller valid aligned timestamp range within one bundle.
+
+        SEGMENTED files persist ``valid_ts_*`` already in aligned space.
+        Non-segmented files persist raw-space ``valid_ts_*`` and require
+        ``clock_offset`` shift here to compare on the same wall-clock axis.
+        """
         rows = self._conn().execute(
             """
-            SELECT controller, MIN(valid_ts_min) AS valid_start, MAX(valid_ts_max) AS valid_end
-              FROM catalog
-             WHERE bundle_id = ?
-               AND valid_ts_min IS NOT NULL
-               AND valid_ts_max IS NOT NULL
+            WITH aligned AS (
+              SELECT controller,
+                     CASE
+                       WHEN offset_method = 'segmented' THEN valid_ts_min
+                       WHEN clock_offset IS NOT NULL THEN valid_ts_min + clock_offset
+                       ELSE NULL
+                     END AS aligned_min,
+                     CASE
+                       WHEN offset_method = 'segmented' THEN valid_ts_max
+                       WHEN clock_offset IS NOT NULL THEN valid_ts_max + clock_offset
+                       ELSE NULL
+                     END AS aligned_max
+                FROM catalog
+               WHERE bundle_id = ?
+                 AND valid_ts_min IS NOT NULL
+                 AND valid_ts_max IS NOT NULL
+            )
+            SELECT controller,
+                   MIN(aligned_min) AS valid_start,
+                   MAX(aligned_max) AS valid_end
+              FROM aligned
+             WHERE aligned_min IS NOT NULL
+               AND aligned_max IS NOT NULL
+               AND aligned_min >= ?
+               AND aligned_max >= ?
+               AND NOT (aligned_min >= ? AND aligned_min < ?)
+               AND NOT (aligned_max >= ? AND aligned_max < ?)
              GROUP BY controller
             """,
-            (str(bundle_id),),
+            (
+                str(bundle_id),
+                MIN_VALID_TS,
+                MIN_VALID_TS,
+                MIN_VALID_TS,
+                INVALID_TS_SENTINEL_2020_END,
+                MIN_VALID_TS,
+                INVALID_TS_SENTINEL_2020_END,
+            ),
         ).fetchall()
         return {
             r["controller"]: {"start": r["valid_start"], "end": r["valid_end"]}

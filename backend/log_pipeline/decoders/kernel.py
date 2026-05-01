@@ -7,7 +7,7 @@ from typing import Iterator, Optional
 
 from log_pipeline.decoders.android_logcat import _LOGCAT_LINE_RE, parse_logcat_timestamp
 from log_pipeline.decoders.base import BaseDecoder, infer_year_hint, iter_text_lines
-from log_pipeline.interfaces import ControllerType, DecodedLine
+from log_pipeline.interfaces import ControllerType, DecodedLine, is_effective_wall_clock_ts
 
 _DMESG_LINE_RE = re.compile(r"^\[\s*(?P<sec>\d+)\.(?P<usec>\d+)\]")
 
@@ -37,7 +37,10 @@ def parse_boot_capture_filename(name: str) -> Optional[tuple[int, float]]:
         ).replace(tzinfo=timezone.utc)
     except ValueError:
         return None
-    return int(m.group("idx")), dt.timestamp()
+    ts = dt.timestamp()
+    if not is_effective_wall_clock_ts(ts):
+        return None
+    return int(m.group("idx")), ts
 
 
 def is_boot_capture_path(bundle_relative_path: str, original_name: str) -> Optional[tuple[int, float]]:
@@ -59,14 +62,14 @@ def parse_kernel_dump_filename(name: str) -> Optional[float]:
     Returns the dump wall-clock epoch (UTC), or ``None`` if the name does not
     match. The wall-clock represents *when the dump was written* — the latest
     entry inside the file is treated as having been emitted at this moment.
-    Ignores the year prefix ``1970-01-01`` (uninitialised RTC) — those files
-    have no usable filename anchor.
+    Ignores invalid RTC sentinel dates (``1970-*`` and ``2020-01-01``) — those
+    files have no usable filename anchor.
     """
     m = _KERNEL_DUMP_FILENAME_RE.match(name)
     if not m:
         return None
     date_str = m.group("date")
-    if date_str.startswith("1970-"):
+    if date_str.startswith("1970-") or date_str == "2020-01-01":
         return None
     try:
         dt = datetime.strptime(
@@ -75,7 +78,10 @@ def parse_kernel_dump_filename(name: str) -> Optional[float]:
         ).replace(tzinfo=timezone.utc)
     except ValueError:
         return None
-    return dt.timestamp()
+    ts = dt.timestamp()
+    if not is_effective_wall_clock_ts(ts):
+        return None
+    return ts
 
 
 def parse_dmesg_relative(text: str) -> Optional[float]:

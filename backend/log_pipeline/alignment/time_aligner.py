@@ -9,13 +9,13 @@ from typing import Iterable, Optional
 
 from log_pipeline.interfaces import (
     MAX_OFFSET_SECONDS,
-    MIN_VALID_TS,
     AlignmentMethod,
     AlignmentStatus,
     AnchorCandidate,
     BundleAlignmentSummary,
     ControllerType,
     SourceOffset,
+    is_effective_wall_clock_ts,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,11 +47,11 @@ class _AnchorView:
 
 def to_anchor_view(rows: Iterable[dict]) -> list[_AnchorView]:
     """Convert anchor table rows (from EventDB.list_anchors) to internal views,
-    discarding pre-MIN_VALID_TS anchors (they belong to unsynced segments)."""
+    discarding unsynced/sentinel anchors."""
     out: list[_AnchorView] = []
     for r in rows:
         ts = r.get("raw_timestamp") if isinstance(r, dict) else None
-        if ts is None or ts < MIN_VALID_TS:
+        if not is_effective_wall_clock_ts(ts):
             continue
         try:
             ctrl = ControllerType(r["controller"])
@@ -74,7 +74,7 @@ def from_anchor_candidates(
     """Adapter for synthetic test fixtures that produce ``AnchorCandidate`` objects."""
     out: list[_AnchorView] = []
     for a in candidates:
-        if a.raw_timestamp < MIN_VALID_TS:
+        if not is_effective_wall_clock_ts(a.raw_timestamp):
             continue
         out.append(
             _AnchorView(

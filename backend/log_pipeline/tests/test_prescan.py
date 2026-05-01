@@ -5,8 +5,10 @@ from uuid import uuid4
 
 from log_pipeline.decoders.base import default_registry
 from log_pipeline.interfaces import (
+    INVALID_TS_SENTINEL_2020_END,
     MIN_VALID_TS,
     AlignmentMethod,
+    BootSegment,
     ControllerType,
     LogFileMeta,
 )
@@ -128,3 +130,76 @@ def test_prescanner_dlt_replay_uses_decoded_text(tmp_path: Path):
     assert "fota_download_start" in types
     anchors = {a.anchor_type for a in res.anchors}
     assert "tbox_clock_sync" in anchors
+
+
+def test_prescanner_prealigned_sentinel_day_not_counted_as_valid(tmp_path: Path):
+    p = tmp_path / "176_2020-01-01_00-00-00.log"
+    p.write_text(
+        "[    0.000000] Booting Linux\n"
+        "[    1.000000] random init\n",
+        encoding="utf-8",
+    )
+    rules = RuleEngine.from_yaml_files(
+        Path("config/event_rules.yaml"), Path("config/anchor_rules.yaml")
+    )
+    pre = Prescanner(default_registry(), rules)
+    meta = LogFileMeta(
+        file_id=uuid4(),
+        bundle_id=uuid4(),
+        controller=ControllerType.KERNEL,
+        original_name=p.name,
+        stored_path=str(p),
+        bundle_relative_path=str(p),
+        decoded_path=str(p),
+        offset_method=AlignmentMethod.FILENAME_ANCHOR,
+        clock_offset=MIN_VALID_TS,
+    )
+    res = pre.run_file(meta, tmp_path)
+    assert res is not None
+    assert res.valid_ts_min is None
+    assert res.valid_ts_max is None
+    assert res.unsynced_line_ranges == [(0, 1)]
+    assert res.bucket_record_count == 0
+
+
+def test_prescanner_segmented_sentinel_day_not_counted_as_valid(tmp_path: Path):
+    p = tmp_path / "mcu_1.log"
+    p.write_text(
+        "&0 INF@SYS : hello\n"
+        "&1000 INF@SYS : world\n",
+        encoding="utf-8",
+    )
+    rules = RuleEngine.from_yaml_files(
+        Path("config/event_rules.yaml"), Path("config/anchor_rules.yaml")
+    )
+    pre = Prescanner(default_registry(), rules)
+    meta = LogFileMeta(
+        file_id=uuid4(),
+        bundle_id=uuid4(),
+        controller=ControllerType.MCU,
+        original_name=p.name,
+        stored_path=str(p),
+        bundle_relative_path=str(p),
+        decoded_path=str(p),
+        offset_method=AlignmentMethod.SEGMENTED,
+        segments=(
+            BootSegment(
+                seq_no=0,
+                line_start=0,
+                line_end=2,
+                byte_start=0,
+                byte_end=p.stat().st_size,
+                raw_ts_min=0.0,
+                raw_ts_max=1.0,
+                clock_offset=MIN_VALID_TS + 60.0,
+                offset_confidence=0.95,
+            ),
+        ),
+    )
+    res = pre.run_file(meta, tmp_path)
+    assert res is not None
+    assert res.valid_ts_min is None
+    assert res.valid_ts_max is None
+    assert res.unsynced_line_ranges == [(0, 1)]
+    assert res.bucket_index_path is None
+    assert INVALID_TS_SENTINEL_2020_END > MIN_VALID_TS

@@ -12,7 +12,6 @@ from uuid import UUID
 from log_pipeline.decoders.base import BaseDecoder, DecoderRegistry, iter_text_lines
 from log_pipeline.index.file_index import BucketIndexWriter
 from log_pipeline.interfaces import (
-    MIN_VALID_TS,
     AlignmentMethod,
     AnchorCandidate,
     BootSegment,
@@ -20,6 +19,7 @@ from log_pipeline.interfaces import (
     DecodedLine,
     ImportantEvent,
     LogFileMeta,
+    is_effective_wall_clock_ts,
 )
 from log_pipeline.prescan.rule_engine import RuleEngine
 
@@ -147,7 +147,7 @@ class Prescanner:
                         if (ts is not None and seg is not None and seg.clock_offset is not None)
                         else None
                     )
-                    if aligned_ts is not None:
+                    if is_effective_wall_clock_ts(aligned_ts):
                         if result.valid_ts_min is None or aligned_ts < result.valid_ts_min:
                             result.valid_ts_min = aligned_ts
                         if result.valid_ts_max is None or aligned_ts > result.valid_ts_max:
@@ -159,7 +159,12 @@ class Prescanner:
                         if unsynced_start is None:
                             unsynced_start = ln.line_no
                 else:
-                    if ts is not None and (is_pre_aligned or ts >= MIN_VALID_TS):
+                    aligned_candidate = (
+                        ts + float(meta.clock_offset)
+                        if (is_pre_aligned and ts is not None)
+                        else ts
+                    )
+                    if ts is not None and is_effective_wall_clock_ts(aligned_candidate):
                         if result.valid_ts_min is None or ts < result.valid_ts_min:
                             result.valid_ts_min = ts
                         if result.valid_ts_max is None or ts > result.valid_ts_max:

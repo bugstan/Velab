@@ -12,6 +12,7 @@ from log_pipeline.alignment.unsynced_segments import (
     refine_with_clock_sync,
 )
 from log_pipeline.interfaces import (
+    INVALID_TS_SENTINEL_2020_END,
     AlignmentMethod,
     AlignmentStatus,
     AnchorCandidate,
@@ -60,7 +61,7 @@ def test_merge_overlapping_ranges():
 
 
 def test_direct_alignment_perfect_match():
-    base_ts = MIN_VALID_TS + 100  # 2020-01-01 + 100s
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     # tbox anchors at 0/100/200, mcu mirrors with offset = +5s
     tbox = [_av(ControllerType.TBOX, "system_boot", base_ts + i * 100) for i in range(3)]
     mcu = [_av(ControllerType.MCU, "system_boot", base_ts + i * 100 - 5) for i in range(3)]
@@ -76,7 +77,7 @@ def test_direct_alignment_perfect_match():
 
 
 def test_direct_alignment_sparse_window_widens():
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     # Only two pairs, slightly outside 60s window but within 600s
     tbox = [
         _av(ControllerType.TBOX, "system_boot", base_ts),
@@ -95,9 +96,18 @@ def test_direct_alignment_sparse_window_widens():
 
 def test_direct_alignment_filters_pre_min_valid_ts_anchors():
     # Anchors below MIN_VALID_TS should be discarded
-    tbox = [_ac(ControllerType.TBOX, "system_boot", MIN_VALID_TS + 100)]
+    tbox = [_ac(ControllerType.TBOX, "system_boot", INVALID_TS_SENTINEL_2020_END + 100)]
     mcu_pre = [_ac(ControllerType.MCU, "system_boot", 1.0)]  # epoch start, < MIN_VALID_TS
     views = from_anchor_candidates(tbox + mcu_pre)
+    summary = align_bundle(views, [ControllerType.TBOX, ControllerType.MCU])
+    assert summary.sources[ControllerType.MCU].offset is None
+    assert summary.status in (AlignmentStatus.PARTIAL, AlignmentStatus.FAILED)
+
+
+def test_direct_alignment_filters_2020_sentinel_anchors():
+    tbox = [_ac(ControllerType.TBOX, "system_boot", INVALID_TS_SENTINEL_2020_END + 100)]
+    mcu_sentinel = [_ac(ControllerType.MCU, "system_boot", MIN_VALID_TS + 30.0)]
+    views = from_anchor_candidates(tbox + mcu_sentinel)
     summary = align_bundle(views, [ControllerType.TBOX, ControllerType.MCU])
     assert summary.sources[ControllerType.MCU].offset is None
     assert summary.status in (AlignmentStatus.PARTIAL, AlignmentStatus.FAILED)
@@ -106,7 +116,7 @@ def test_direct_alignment_filters_pre_min_valid_ts_anchors():
 def test_anchors_far_apart_yield_no_offset():
     """If candidate anchors of the same type are 100 days apart they cannot pair
     within either the 60s nor the 600s sparse window, so no offset is produced."""
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     huge = 100 * 86400
     tbox = [_av(ControllerType.TBOX, "system_boot", base_ts + i * 30) for i in range(3)]
     mcu = [_av(ControllerType.MCU, "system_boot", base_ts + i * 30 + huge) for i in range(3)]
@@ -132,7 +142,7 @@ def test_30_day_sanity_predicate_directly():
 
 
 def test_two_hop_via_android():
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     # tbox + android share anchors → strong direct
     tbox = [_av(ControllerType.TBOX, "system_boot", base_ts + i * 60) for i in range(4)]
     android = [_av(ControllerType.ANDROID, "system_boot", base_ts + i * 60 - 1) for i in range(4)]
@@ -154,7 +164,7 @@ def test_two_hop_via_android():
 
 
 def test_two_hop_skipped_if_direct_already_high_confidence():
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     tbox = [_av(ControllerType.TBOX, "system_boot", base_ts + i * 60) for i in range(5)]
     android = [_av(ControllerType.ANDROID, "system_boot", base_ts + i * 60 - 1) for i in range(5)]
     mcu = [_av(ControllerType.MCU, "system_boot", base_ts + i * 60 - 4) for i in range(5)]
@@ -170,7 +180,7 @@ def test_two_hop_skipped_if_direct_already_high_confidence():
 
 
 def test_degrades_to_android_when_tbox_missing():
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     android = [_av(ControllerType.ANDROID, "system_boot", base_ts + i * 60) for i in range(3)]
     mcu = [_av(ControllerType.MCU, "system_boot", base_ts + i * 60 - 4) for i in range(3)]
     summary = align_bundle(
@@ -189,7 +199,7 @@ def test_failed_when_no_usable_anchors():
 
 
 def test_partial_when_one_target_aligned_other_missing():
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     tbox = [_av(ControllerType.TBOX, "system_boot", base_ts + i * 60) for i in range(3)]
     android = [_av(ControllerType.ANDROID, "system_boot", base_ts + i * 60 - 1) for i in range(3)]
     # mcu has no anchors at all
@@ -206,7 +216,7 @@ def test_partial_when_one_target_aligned_other_missing():
 
 
 def test_high_jitter_reduces_confidence():
-    base_ts = MIN_VALID_TS + 100
+    base_ts = INVALID_TS_SENTINEL_2020_END + 100
     # Five pairs but with massive scatter (offsets of -50, 0, 50, ...)
     tbox = [_av(ControllerType.TBOX, "system_boot", base_ts + i * 60) for i in range(5)]
     mcu = [

@@ -14,10 +14,10 @@ from log_pipeline.decoders.base import DecoderRegistry, default_registry
 from log_pipeline.decoders.kernel import is_boot_capture_path, parse_kernel_dump_filename
 from log_pipeline.decoders.mcu_text import detect_mcu_segments
 from log_pipeline.interfaces import (
-    MIN_VALID_TS,
     AlignmentMethod,
     ControllerType,
     LogFileMeta,
+    is_effective_wall_clock_ts,
 )
 from log_pipeline.storage.catalog import Catalog
 from log_pipeline.storage.filestore import FileStore
@@ -316,7 +316,7 @@ def _update_ts(
 def _update_valid(
     ts: Optional[float], cur_min: Optional[float], cur_max: Optional[float]
 ) -> tuple[Optional[float], Optional[float]]:
-    if ts is None or ts < MIN_VALID_TS:
+    if not is_effective_wall_clock_ts(ts):
         return cur_min, cur_max
     return (
         ts if cur_min is None or ts < cur_min else cur_min,

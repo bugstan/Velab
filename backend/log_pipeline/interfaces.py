@@ -155,6 +155,23 @@ class LogDecoder(Protocol):
 MIN_VALID_TS: float = 1577836800.0
 """2020-01-01 00:00:00 UTC — timestamps below this are treated as unsynced."""
 
+INVALID_TS_SENTINEL_2020_END: float = MIN_VALID_TS + 86400.0
+"""2020-01-02 00:00:00 UTC — [MIN_VALID_TS, this) is treated as placeholder RTC."""
+
+
+def is_effective_wall_clock_ts(ts: Optional[float]) -> bool:
+    """True when ``ts`` is usable as an aligned wall-clock timestamp.
+
+    Invalid timestamps include:
+      - values before 2020-01-01 (classic 1970/2000 unsynced clocks);
+      - the whole 2020-01-01 sentinel day used by some controllers before real sync.
+    """
+    if ts is None or ts < MIN_VALID_TS:
+        return False
+    if MIN_VALID_TS <= ts < INVALID_TS_SENTINEL_2020_END:
+        return False
+    return True
+
 BUCKET_SECONDS: int = 300
 """5-minute bucket size for the file-level time index."""
 

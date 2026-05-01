@@ -15,7 +15,9 @@ from log_pipeline.decoders.fota_text import FotaTextDecoder, parse_fota_timestam
 from log_pipeline.decoders.kernel import (
     KernelDmesgDecoder,
     KernelLogcatDecoder,
+    parse_boot_capture_filename,
     parse_dmesg_relative,
+    parse_kernel_dump_filename,
 )
 from log_pipeline.decoders.tbox_text import TboxTextDecoder, parse_generic_timestamp
 from log_pipeline.interfaces import ControllerType
@@ -159,6 +161,16 @@ def test_kernel_dmesg_decoder(tmp_path: Path):
     assert d.can_decode(p)
     lines = list(d.iter_lines(p))
     assert [ln.raw_timestamp for ln in lines] == [0.0, pytest.approx(1.234567)]
+
+
+def test_kernel_filename_anchors_filter_unsynced_dates():
+    assert parse_boot_capture_filename("1_1970-01-01_00-00-00.log") is None
+    assert parse_boot_capture_filename("1_2020-01-01_12-34-56.log") is None
+    assert parse_boot_capture_filename("1_2020-01-02_00-00-00.log") is not None
+
+    assert parse_kernel_dump_filename("kernel@1970-01-01_00-00-00.log") is None
+    assert parse_kernel_dump_filename("kernel@2020-01-01_12-34-56.log") is None
+    assert parse_kernel_dump_filename("kernel@2020-01-02_00-00-00.log") is not None
 
 
 def test_kernel_logcat_decoder_for_kernel_dot_log(tmp_path: Path):
