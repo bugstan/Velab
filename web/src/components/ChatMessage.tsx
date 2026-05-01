@@ -328,6 +328,18 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
   const renderUploadProgress = () => {
     if (!message.uploadProgress) return null;
     const progress = message.uploadProgress;
+    const stripFileNamePrefix = (value: string): string => {
+      const normalized = value.trim();
+      if (!normalized) return "处理中...";
+      for (const file of progress.files) {
+        const prefix = `${file.fileName} - `;
+        if (normalized.startsWith(prefix)) {
+          return normalized.slice(prefix.length).trim() || "处理中...";
+        }
+      }
+      return normalized;
+    };
+    const mainStatusText = stripFileNamePrefix(progress.message || "处理中...");
     const hasFailed = progress.files.some((file) => file.status === "failed");
     const allCompleted = progress.files.length > 0 && progress.files.every((file) => file.status === "completed");
     const progressBarColor = hasFailed
@@ -335,36 +347,19 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
       : allCompleted
         ? "#238636"
         : "var(--accent-blue)";
-    const statusColorMap: Record<string, string> = {
-      completed: "#238636",
-      failed: "#f85149",
-      processing: "var(--accent-blue)",
-      uploading: "var(--accent-blue)",
-      queued: "var(--text-secondary)",
-    };
-    const statusIconMap: Record<string, string> = {
-      completed: "✓",
-      failed: "●",
-      processing: "●",
-      uploading: "●",
-      queued: "○",
-    };
     return (
       <div
         className="mt-3 rounded-xl border p-3"
         style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}
       >
         <div className="flex items-center justify-between text-xs mb-1">
-          <span style={{ color: "var(--text-secondary)" }}>{progress.message || "处理中..."}</span>
+          <span className="truncate pr-2" style={{ color: "var(--text-secondary)" }} title={mainStatusText}>
+            {mainStatusText}
+          </span>
           <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
             {Math.max(0, Math.min(100, progress.percent))}%
           </span>
         </div>
-        {progress.stage ? (
-          <div className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
-            {progress.stage}
-          </div>
-        ) : null}
         <div className="h-1.5 rounded-full mb-2" style={{ background: "var(--border-color)" }}>
           <div
             className="h-1.5 rounded-full transition-all"
@@ -374,31 +369,39 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
             }}
           />
         </div>
-        <div className="grid gap-1">
-          {progress.files.map((file) => (
-            <div key={file.fileName} className="flex items-center justify-between text-xs gap-2">
-              <span className="flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
-                <span
-                  aria-hidden="true"
-                  style={{
-                    color: statusColorMap[file.status] ?? "var(--text-secondary)",
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
-                >
-                  {statusIconMap[file.status] ?? "○"}
-                </span>
-                <span>{file.fileName}</span>
-              </span>
-              <span style={{ color: statusColorMap[file.status] ?? "var(--text-secondary)" }}>
-                {file.stage} · {Math.max(0, Math.min(100, file.percent))}%
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
     );
   };
+
+  if (message.role === "system") {
+    return (
+      <div className="mb-6 animate-fade-in">
+        <div
+          className="rounded-xl border px-4 py-3"
+          style={{
+            borderColor: "var(--border-color)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <div className="mb-2 text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+            系统反馈
+          </div>
+          {message.content ? (
+            <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+              {message.content}
+            </div>
+          ) : null}
+          {!message.isStreaming && message.uploadSummaries && message.uploadSummaries.length > 0 && (
+            <div className="mt-3 grid gap-3">
+              {message.uploadSummaries.map((summary) => (
+                <UploadSummaryCard key={`${summary.bundleId}-${summary.fileName}`} summary={summary} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (message.role === "user") {
     return (
@@ -415,13 +418,6 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
           {renderUploadProgress()}
           {renderBundleActions()}
           {renderStatusDetails()}
-          {!message.isStreaming && message.uploadSummaries && message.uploadSummaries.length > 0 && (
-            <div className="mt-3 grid gap-3">
-              {message.uploadSummaries.map((summary) => (
-                <UploadSummaryCard key={`${summary.bundleId}-${summary.fileName}`} summary={summary} />
-              ))}
-            </div>
-          )}
         </div>
       </div>
     );
@@ -471,14 +467,6 @@ export default function ChatMessageComponent({ message }: ChatMessageProps) {
 
           {renderBundleActions()}
           {renderStatusDetails()}
-
-          {!message.isStreaming && message.uploadSummaries && message.uploadSummaries.length > 0 && (
-            <div className="mt-3 grid gap-3">
-              {message.uploadSummaries.map((summary) => (
-                <UploadSummaryCard key={`${summary.bundleId}-${summary.fileName}`} summary={summary} />
-              ))}
-            </div>
-          )}
 
           {!message.isStreaming && message.sources && message.sources.length > 0 && (
             <SourcePanel sources={message.sources} />

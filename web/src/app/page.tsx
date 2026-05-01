@@ -42,13 +42,6 @@ const MAX_STATUS_ERROR_RETRIES = 5;
 const DRAFT_SESSION_ID = "__draft__";
 const ACTIVE_SESSION_STORAGE_KEY = "fota_active_session_id";
 
-const formatUnixSeconds = (value: number | null | undefined): string => {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return "无有效时间";
-  }
-  return new Date(value * 1000).toISOString();
-};
-
 const createSessionId = (): string =>
   `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -678,9 +671,7 @@ export default function Home() {
       };
     };
 
-    const resultLines: string[] = [];
     const uploadSummaries: UploadSummary[] = [];
-    const bundleActions: { label: string; bundleId: string; action?: "status" | "rangeQuery" }[] = [];
     const finalFileStates = new Map<string, "completed" | "failed" | "processing">();
     for (const file of fileArray) {
       const form = new FormData();
@@ -710,7 +701,6 @@ export default function Home() {
         });
         const payload = await resp.json();
         if (!resp.ok) {
-          resultLines.push(`- ${file.name}: 上传失败 (${payload?.detail || payload?.error?.message || payload?.error || resp.status})`);
           finalFileStates.set(file.name, "failed");
           updateUploadMessage((message) => withUpdatedFile(message, file.name, {
             status: "failed",
@@ -723,7 +713,6 @@ export default function Home() {
         }
         const bundleId = payload?.bundle_id;
         if (!bundleId) {
-          resultLines.push(`- ${file.name}: 提交失败（未返回 bundle_id）`);
           finalFileStates.set(file.name, "failed");
           updateUploadMessage((message) => withUpdatedFile(message, file.name, {
             status: "failed",
@@ -815,7 +804,6 @@ export default function Home() {
         }
 
         if (statusQueryError) {
-          resultLines.push(`- ${file.name}: 状态查询失败 (${statusQueryError})`);
           finalFileStates.set(file.name, "failed");
           updateUploadMessage((message) => withUpdatedFile(message, file.name, {
             status: "failed",
@@ -825,18 +813,12 @@ export default function Home() {
             error: statusQueryError,
             bundleId,
           }));
-          bundleActions.push({ label: file.name, bundleId, action: "status" });
           continue;
         }
 
         if (!finalStatus) {
           const stageLabel = getBundleStageLabel(lastObservedStatus);
           finalFileStates.set(file.name, "processing");
-          resultLines.push(
-            `- ${file.name}: 当前仍在后台处理（阶段：${stageLabel}，进度：${Math.round(
-              lastObservedProgress * 100
-            )}%）。可点下方按钮查看实时状态。`
-          );
           updateUploadMessage((message) => withUpdatedFile(message, file.name, {
             status: "processing",
             percent: Math.max(8, Math.round(lastObservedProgress * 100)),
@@ -844,12 +826,10 @@ export default function Home() {
             message: "后台处理中，可在消息内继续查看状态",
             bundleId,
           }));
-          bundleActions.push({ label: file.name, bundleId, action: "status" });
           continue;
         }
 
         if (finalStatus.status === "failed") {
-          resultLines.push(`- ${file.name}: 处理失败 (${finalStatus?.error || "未知错误"})`);
           finalFileStates.set(file.name, "failed");
           updateUploadMessage((message) => withUpdatedFile(message, file.name, {
             status: "failed",
@@ -862,20 +842,6 @@ export default function Home() {
           continue;
         }
 
-        const ctrlSummary = finalStatus.files_by_controller
-          ? Object.entries(finalStatus.files_by_controller).map(([k, v]) => `${k}=${v}`).join(", ")
-          : "—";
-        const timeSummary = finalStatus.valid_time_range_by_controller
-          ? Object.entries(finalStatus.valid_time_range_by_controller)
-              .map(
-                ([controller, range]) =>
-                  `${controller}:[${formatUnixSeconds(range.start)} ~ ${formatUnixSeconds(range.end)}]`
-              )
-              .join("; ")
-          : "—";
-        resultLines.push(
-          `- ${file.name}: 完成（共 ${finalStatus.file_count ?? 0} 个文件；按控制器 ${ctrlSummary}；有效时间 ${timeSummary}）`
-        );
         finalFileStates.set(file.name, "completed");
         uploadSummaries.push({
           bundleId,
@@ -891,10 +857,7 @@ export default function Home() {
           message: "上传与解析完成",
           bundleId,
         }));
-        bundleActions.push({ label: file.name, bundleId, action: "status" });
-        bundleActions.push({ label: file.name, bundleId, action: "rangeQuery" });
       } catch (err) {
-        resultLines.push(`- ${file.name}: 上传异常 (${(err as Error).message})`);
         finalFileStates.set(file.name, "failed");
         updateUploadMessage((message) => withUpdatedFile(message, file.name, {
           status: "failed",
@@ -915,9 +878,6 @@ export default function Home() {
         : message.uploadProgress.percent;
       return {
         ...message,
-        content: resultLines.length > 0
-          ? `上传文件：\n${uploadLines}\n\n处理结果：\n${resultLines.join("\n")}`
-          : message.content,
         uploadProgress: {
           ...message.uploadProgress,
           active: hasProcessing,
@@ -927,10 +887,19 @@ export default function Home() {
             ? "部分文件仍在后台处理中，可在消息内继续查看状态"
             : (hasFailed ? "上传和解析结束，部分文件失败" : "上传和解析流程已结束"),
         },
-        ...(bundleActions.length > 0 ? { bundleActions } : {}),
-        ...(uploadSummaries.length > 0 ? { uploadSummaries } : {}),
       };
     });
+    if (uploadSummaries.length > 0) {
+      const summaryMessage: ChatMessage = {
+        id: `${Date.now()}-upload-summary`,
+        role: "system",
+        systemKind: "upload_summary",
+        content: "日志上传汇总",
+        timestamp: new Date(),
+        uploadSummaries,
+      };
+      updateSessionMessages(targetSessionId, (prev) => [...prev, summaryMessage]);
+    }
   };
 
   const handleSend = async (message: string) => {

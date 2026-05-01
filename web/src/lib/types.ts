@@ -65,7 +65,7 @@ export interface UploadProgressView {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   thinking?: ThinkingProcessData;
   timestamp: Date;
@@ -78,6 +78,8 @@ export interface ChatMessage {
   uploadSummaries?: UploadSummary[];
   /** 上传消息内联进度（上传和解析都在同一气泡中展示） */
   uploadProgress?: UploadProgressView;
+  /** 系统消息的业务类型，用于区分不同系统反馈卡片 */
+  systemKind?: "upload_summary";
 }
 
 export interface ChatSession {
