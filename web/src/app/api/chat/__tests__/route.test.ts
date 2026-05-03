@@ -232,14 +232,7 @@ describe('API Route: /api/chat', () => {
     })
 
     describe('边界情况', () => {
-        it('应该处理空消息', async () => {
-            const mockStream = new ReadableStream()
-
-            mockFetch.mockResolvedValue({
-                ok: true,
-                body: mockStream,
-            })
-
+        it('应该拒绝空消息并返回 400', async () => {
             const request = new NextRequest('http://localhost:3000/api/chat', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -249,9 +242,10 @@ describe('API Route: /api/chat', () => {
                 }),
             })
 
-            await POST(request)
+            const response = await POST(request)
 
-            expect(mockFetch).toHaveBeenCalled()
+            expect(response.status).toBe(400)
+            expect(mockFetch).not.toHaveBeenCalled()
         })
 
         it('应该处理长消息', async () => {

@@ -45,7 +45,27 @@ export const maxDuration = 120;
  * })
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
+  }
+
+  // 基本结构校验：拒绝畸形或超大 payload
+  if (typeof body !== "object" || body === null) {
+    return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400 });
+  }
+  const { message, scenarioId, history } = body as Record<string, unknown>;
+  if (typeof message !== "string" || message.length === 0 || message.length > 10000) {
+    return new Response(JSON.stringify({ error: "message must be a non-empty string (max 10000 chars)" }), { status: 400 });
+  }
+  if (scenarioId !== undefined && typeof scenarioId !== "string") {
+    return new Response(JSON.stringify({ error: "scenarioId must be a string" }), { status: 400 });
+  }
+  if (history !== undefined && !Array.isArray(history)) {
+    return new Response(JSON.stringify({ error: "history must be an array" }), { status: 400 });
+  }
 
   // 创建 AbortController 用于超时控制
   const controller = new AbortController();

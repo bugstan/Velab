@@ -55,6 +55,22 @@ interface ChatMessageProps {
  * @param content - Markdown 格式的文本
  * @returns HTML 字符串
  */
+/** 转义 HTML 特殊字符，防止 XSS */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/** 校验 URL 仅允许 http/https/# 协议，拒绝 javascript: 等 */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('#') ? trimmed : '#';
+}
+
 function renderMarkdown(content: string): string {
   // First, handle block-level replacements that need to preserve structure
   let html = content;
@@ -68,13 +84,13 @@ function renderMarkdown(content: string): string {
         </svg>
         <span>思考过程</span>
       </summary>
-      <div class="px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap" style="color: var(--text-muted); border-top: 1px solid var(--border-color)">${thinkingContent.trim()}</div>
+      <div class="px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap" style="color: var(--text-muted); border-top: 1px solid var(--border-color)">${escapeHtml(thinkingContent.trim())}</div>
     </details>`;
   });
 
   // 渲染代码块（在split之前处理，避免被拆分）
   html = html.replace(/```([\s\S]*?)```/g, (_match, code) => {
-    return `<pre class="my-3 p-3 rounded-lg text-xs overflow-x-auto" style="background: var(--bg-tertiary); color: var(--text-secondary)"><code>${code.trim()}</code></pre>`;
+    return `<pre class="my-3 p-3 rounded-lg text-xs overflow-x-auto" style="background: var(--bg-tertiary); color: var(--text-secondary)"><code>${escapeHtml(code.trim())}</code></pre>`;
   });
 
   // Now process line by line
@@ -91,7 +107,9 @@ function renderMarkdown(content: string): string {
         // Apply inline formatting to the paragraph text
         paragraphText = paragraphText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         paragraphText = paragraphText.replace(/`([^`]+)`/g, '<code>$1</code>');
-        paragraphText = paragraphText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:underline">$1</a>');
+        paragraphText = paragraphText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
+          return `<a href="${sanitizeUrl(url)}" class="text-blue-400 hover:underline" rel="noopener noreferrer" target="_blank">${text}</a>`;
+        });
         paragraphText = paragraphText.replace(/置信度[：:]\s*(高|中|低|high|medium|low)/gi, (match, level) => {
           const normalizedLevel = level.toLowerCase();
           let color, bgColor, text;

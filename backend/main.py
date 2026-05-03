@@ -36,6 +36,7 @@ from common.chain_log import (
     reset_trace_id,
     setup_logging,
 )
+from config import settings
 
 from contextlib import asynccontextmanager
 
@@ -111,7 +112,7 @@ app = FastAPI(
 # 配置 CORS 中间件，允许前端跨域访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制为具体域名
+    allow_origins=settings.ALLOWED_ORIGINS.split(","),  # 从环境变量读取，避免通配符
     allow_methods=["*"],
     allow_headers=["*"],
 )

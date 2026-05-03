@@ -158,6 +158,16 @@ class Settings(BaseSettings):
     WORKSPACE_ENABLED: bool = True  # 是否启用 Markdown 工作区
     WORKSPACE_MAX_SIZE_MB: int = 1024  # 工作区总容量上限（MB）
 
+    # ── Agent LLM 开关 ──
+    # True  = Agent 调用 LLM 生成诊断（无 Key 或调用失败时自动降级到 mock）
+    # False = 强制全局 mock，适用于离线测试 / CI
+    AGENTS_USE_LLM: bool = True
+
+    # ── CORS 配置 ──
+    # 逗号分隔的允许来源列表，生产环境应设置为具体域名
+    # 示例: ALLOWED_ORIGINS=https://fota.example.com,https://admin.example.com
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
@@ -166,9 +176,14 @@ settings = Settings()
 
 # ── 场景化 Agent 映射（Velab 编排层使用）──
 SCENARIO_AGENT_MAP: dict[str, list[str]] = {
+    # 基础 FOTA 诊断：日志分析 + 技术文档检索（无 Jira）
     "fota-diagnostic": ["log_analytics", "doc_retrieval"],
+    # FOTA + Jira：增加历史工单匹配，适合已有历史数据的问题
     "fota-jira": ["log_analytics", "jira_knowledge", "doc_retrieval"],
+    # 车队数据分析：聚焦日志统计分析（无文档/Jira）
     "fleet-analytics": ["log_analytics"],
-    "ces-demo": ["log_analytics", "jira_knowledge", "doc_retrieval"],
+    # CES Demo：全量 Agent，叠加 RCA 综合分析（展会演示用全链路）
+    "ces-demo": ["log_analytics", "jira_knowledge", "doc_retrieval", "rca_synthesizer"],
+    # 数据采集演示：仅日志解析管线
     "data-acquisitions": ["log_analytics"],
 }
