@@ -10,24 +10,36 @@
 web/
 ├── src/
 │   ├── app/                    # Next.js App Router
-│   │   ├── api/chat/          # API 路由（代理层）
+│   │   ├── api/
+│   │   │   ├── chat/           # SSE 诊断流代理
+│   │   │   ├── upload-log/     # 日志包上传代理
+│   │   │   ├── bundle-status/  # Bundle 处理状态轮询
+│   │   │   ├── bundle-events/  # Bundle 事件查询
+│   │   │   ├── bundle-logs/    # Bundle 日志内容查询
+│   │   │   ├── sessions/       # 会话 CRUD
+│   │   │   ├── parse-status/   # 解析任务状态
+│   │   │   └── session-title/  # 会话标题生成
 │   │   ├── page.tsx           # 主页面
 │   │   ├── layout.tsx         # 根布局
 │   │   └── globals.css        # 全局样式
 │   ├── components/            # React 组件
-│   │   ├── ChatMessage.tsx    # 消息组件
-│   │   ├── ThinkingProcess.tsx # 思考过程展示
+│   │   ├── ChatMessage.tsx    # 消息组件（含 XSS 防护）
+│   │   ├── ThinkingProcess.tsx # Agent 执行状态展示
 │   │   ├── InputBar.tsx       # 输入框
-│   │   ├── Header.tsx         # 页头
+│   │   ├── Header.tsx         # 页头（场景切换）
 │   │   ├── WelcomePage.tsx    # 欢迎页
-│   │   └── FeedbackButtons.tsx # 反馈按钮
+│   │   ├── FeedbackButtons.tsx # 反馈按钮
+│   │   ├── SourcePanel.tsx    # 引用来源面板
+│   │   ├── SessionSidebar.tsx # 历史会话侧边栏
+│   │   └── UploadSummaryCard.tsx # 日志上传摘要卡
 │   └── lib/                   # 工具库
 │       ├── types.ts           # TypeScript 类型定义
-│       └── sseParse.ts        # SSE 解析器
+│       ├── sseParse.ts        # SSE 流解析器
+│       └── bundleStatus.ts    # Bundle 状态轮询客户端
 ├── public/                    # 静态资源
 ├── package.json               # 依赖配置
 ├── tsconfig.json              # TypeScript 配置
-├── next.config.ts             # Next.js 配置
+├── next.config.ts             # Next.js 配置（含安全响应头、outputFileTracingRoot）
 └── postcss.config.mjs          # PostCSS / Tailwind CSS v4 配置
 ```
 
@@ -145,11 +157,31 @@ sudo systemctl start fota-web
 - 反馈按钮（点赞/点踩）
 - 自动滚动到最新消息
 
-### 4. 响应式设计
+### 4. 日志上传工作流（Sprint 5 新增）
+
+- 拖拽或选择日志压缩包上传（zip/tar.gz）
+- 实时展示解析进度（轮询 bundle 状态）
+- 上传完成后展示摘要（文件数、事件数、控制器分类）
+- 错误状态友好展示
+
+### 5. 会话持久化
+
+- 侧边栏展示历史会话列表
+- 支持新建 / 切换 / 删除会话
+- 刷新页面后自动恢复上次会话
+
+### 6. 响应式设计
 
 - 支持桌面和移动设备
 - 深色主题（基于 CSS 变量）
 - 流畅的动画效果
+
+### 7. 安全加固（Sprint 5 新增）
+
+- **XSS 防护**：`ChatMessage.tsx` 内置 `escapeHtml()` / `sanitizeUrl()` 过滤
+- **安全响应头**：`X-Content-Type-Options` / `X-Frame-Options` / `X-XSS-Protection` / `Referrer-Policy` / `Permissions-Policy`
+- **输入验证**：`/api/chat` 请求体长度和格式限制
+- **依赖漏洞**：`npm audit` 输出 0 vulnerabilities
 
 ---
 
@@ -349,5 +381,5 @@ npm run build
 ---
 
 **项目状态**: 🚧 开发中  
-**最后更新**: 2026-04-06  
+**最后更新**: 2026-05-03  
 **维护团队**: FOTA 诊断平台团队

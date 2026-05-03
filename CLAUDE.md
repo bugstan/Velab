@@ -111,10 +111,49 @@
 - `vitest.config.ts` 添加覆盖率 thresholds（branches≥70%, functions≥70%, lines≥80%, statements≥80%）
 - 总体进度 80% → 93%
 
-### 2026-05-03: 安全加固 + CI 修复 + 开发工具链
+### 2026-05-03: 单元测试全面补全
+- **后端新增 4 个测试文件（63 个用例）**：`test_redaction.py`（17）、`test_chain_log.py`（16）、`test_tool_functions.py`（13）、`test_semantic_cache.py`（17）
+- 覆盖此前零测试的核心模块：`common/redaction.py`（VIN/手机号/车牌脱敏 + async 装饰器）、`common/chain_log.py`（trace_id 管理 + step_timer）、`services/tool_functions.py`（workspace 文件读写 + todo 状态）、`services/semantic_cache.py`（SHA-256 精确缓存 MISS/HIT/UPSERT/stats）
+- **前端新增 7 个测试文件（16 个用例）**：sessions、sessions/[sessionId]、session-title、upload-log、bundle-status/[bundleId]、bundle-events/[bundleId]、bundle-logs/[bundleId] 全部 100% 覆盖
+- **修复 patch 路径**：`tool_functions.py` 中 `workspace_manager` 是延迟导入（函数内 `from services.workspace_manager import ...`），patch 目标为 `services.workspace_manager.workspace_manager` 而非 `services.tool_functions.workspace_manager`
+- **修复 JSDOM/undici 兼容性**：`upload-log` 测试中 `new NextRequest(body=FormData)` 会触发 undici webidl 断言；改为 mock `request.formData()` 方法绕过
+- **后端总量**：145 → **208 passed**；**前端总量**：185 → **201 passed**；前端覆盖率 statements 84.7% / branches 74.4% / lines 87.8%，全部高于红线
+
+### 2026-05-03: Bundle-Agent 断链修复
+- **问题根因**: 用户上传日志包后发起对话，`LogAnalyticsAgent._load_logs()` 固定读 `data/logs/` mock 数据，与上传的真实日志完全断链。
+- **修复 4 处**:
+  1. `backend/agents/log_analytics.py`: 新增 `_load_logs_from_bundle(bundle_id, keywords)` — 调用 `/api/bundles/{id}` 获取时间范围，再调用 `/api/bundles/{id}/logs` 拉 NDJSON，解析为可读文本，按关键词过滤，多级 fallback 到 `data/logs/`
+  2. `backend/agents/orchestrator.py`: `orchestrate()` 新增 `bundle_id` 参数，若未传则自动从 `conversation_history` 中扫描最近一条 `systemKind: upload_summary` 提取；`_run_agent` 将 `bundle_id` 注入 `agent_context`
+  3. `backend/main.py`: `/chat` 端点从 body 读取可选 `bundle_id`，传给 `orchestrate()`
+  4. `web/src/app/page.tsx`: `handleSend()` 提取当前会话消息中最近 `uploadSummaries` 的 `bundleId`，附加到 fetch `/api/chat` 请求体；`api/chat/route.ts` 新增 `bundleId` 校验
+- **config.py**: 新增 `BACKEND_BASE_URL: str = "http://localhost:8000"` 供 Agent 内部调用使用
+- **新增测试**: `backend/tests/test_log_analytics_bundle.py`（11 个用例）覆盖 bundle 加载成功、404 fallback、无时间范围 fallback、网络异常 fallback、关键词过滤、execute() 路由、orchestrator bundle_id 注入
+- **后端总量**: 208 → **219 passed**；前端测试无变化（201 passed）
 - **安全修复**: `ChatMessage.tsx` 新增 `escapeHtml()`/`sanitizeUrl()` 防 XSS；`chat/route.ts` 添加输入验证；`next.config.ts` 添加 5 个安全响应头；`main.py` CORS 收窄为 `ALLOWED_ORIGINS` 环境变量
 - **依赖**: `npm audit fix` 修复 Vite 3 个 HIGH CVE；`package.json overrides` 强制 postcss ≥ 8.5.10，`npm audit` 输出 0 vulnerabilities
 - **scripts/dev.sh**: 一键启动脚本，启动前自动清理旧进程（SIGTERM→SIGKILL），按 `DEPLOYMENT_MODE` 智能决定是否启动 LiteLLM Gateway
 - **CI 修复**: `ci.yml` 补全 `POSTGRES_DB` 等环境变量；新增 Redis 7 service；flake8 增加 `--exclude=venv,.venv`
 - **scripts/test-ci.sh**: 本地 CI 模拟脚本，**发 PR 前必须先跑**，看到绿色通过提示再推送
 - **Copilot Skills**: `.agents/skills/` 25 个 + `.github/agents/` 3 个 Persona + `.github/copilot-instructions.md`
+
+### 2026-05-03: log_pipeline 上传格式扩展 + 兼容性修复
+- **新增 `.rar` 上传支持**：`log_pipeline/ingest/extractor.py` 新增 `import rarfile` 和 `_extract_rar()` 方法，依赖系统 `/usr/bin/unrar`；`_NESTED_ARCHIVE_SUFFIXES` 追加 `.rar`（支持 RAR 内嵌归档递归展开）；`requirements.txt` 新增 `rarfile==4.2`
+- **新增裸文件上传支持**（`.log / .txt / .dlt`）：`_extract_into` else 分支改为调用 `_extract_plain()`（原来直接抛 ValueError）；HTTP 白名单同步扩展，错误码改为 `UNSUPPORTED_FORMAT`
+- **修复 `_extract_plain` UUID 前缀 Bug**：上传文件保存为 `{uuid32}__原始名`，`_extract_plain` 原来直接以磁盘名为 `relative_path`，导致分类器（如 `fota*.log`）无法命中；新增 `_UPLOAD_PREFIX_RE = re.compile(r'^[0-9a-f]{32}__')` 剥离前缀后使用原始文件名
+- **冒烟验证**：对真实 `fota_log.rar`（221MB / 273 成员）验证，路径含中文、嵌套 zip 自动展开，共输出 254 文件；全部后端 219 个测试通过
+### 2026-05-03: LLM 依赖模块集成测试全面补全
+- **后端新增 8 个测试文件（131 个用例）**：`test_session_title.py`（18）、`test_rca_synthesizer.py`（19）、`test_doc_chunker.py`（15）、`test_feedback_api.py`（14）、`test_jira_knowledge.py`（15）、`test_doc_retrieval.py`（9）、`test_evaluation.py`（19）、`test_log_analytics_bundle.py`（11+，含 bundle 加载成功/404/超时/关键词过滤/orchestrator 注入）；log_pipeline 追加 `test_http_upload.py`（10）
+- **覆盖 LLM 依赖模块**：`agents/jira_knowledge.py`（embed 分支 fallback + keyword 搜索）、`agents/doc_retrieval.py`（vector_service mock + 相似度置信度映射）、`services/evaluation.py`（5 维评分 + load_eval_set + run_eval 报告）
+- **关键 mock 策略**：LLM 延迟导入需 patch `"services.llm.chat_completion"`；vector_service 使用 `patch.object(agent, "_load_documents", ...)`
+- **后端总量**：219 → **350 passed**
+
+### 2026-05-03: 代码审查安全加固（全量 diff 审查）
+- **[C-1] 修复 Bundle 集成 Day-1 Bug**：`log_analytics._load_logs_from_bundle` 读取了不存在的字段 `valid_time_range`（实际 API 返回 `valid_time_range_by_controller: {ctrl: {start, end}}`），导致 Bundle 日志永远 fallback 到 mock；同步修正 `test_log_analytics_bundle.py` 测试 mock
+- **[C-2] 修复路径遍历漏洞**：`_should_skip()` 新增 `".." in parts` 和绝对路径检测，阻断 RAR/ZIP/TAR 归档中的任意文件写入攻击
+- **[I-1] `main.py` bundle_id UUID 校验**：API 边界处增加 `re.fullmatch` UUID 格式验证，非法值返回 400，防止路径注入/SSRF
+- **[I-2] orchestrator 历史提取 bundle_id 防伪造**：从 `conversation_history` 自动提取的 `bundleId` 增加 UUID 格式正则校验，拒绝非法格式
+- **[I-3] log_resp 移入 with 块**：`raw_text = log_resp.text` 在 `async with` 关闭前捕获，防止未来切换流式读取时崩溃
+- **[I-4] save_embed_index 原子写入**：`.partial + os.replace()` 模式，防止进程崩溃导致索引文件损坏
+- **[I-5] route.ts bundleId UUID 校验**：前端 API 路由增加长度上限（36）和 UUID 正则校验
+- **[S-1] http.py 常量提升**：`_PLAIN_SUFFIXES`/`_ARCHIVE_SUFFIXES` 移至模块级 `frozenset`，避免每次请求重建
+- **测试总量**：350 passed（后端），201 passed（前端），全量无回归

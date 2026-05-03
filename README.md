@@ -24,29 +24,26 @@
 ```
 Velab/
 ├── backend/              # FastAPI 后端服务
-│   ├── agents/           # Agent 实现（Log/Jira/Doc）
-│   ├── api/              # RESTful API接口（15个端点）
-│   ├── models/           # SQLAlchemy ORM模型
-│   ├── services/         # 核心服务（Parser/TimeAlignment/WorkspaceManager）
-│   ├── tasks/            # Arq异步任务队列
-│   ├── tests/            # API单元测试和集成测试（10+新增工作区测试）
+│   ├── agents/           # Agent 实现（Log/Jira/Doc/RCA）
+│   ├── api/              # 平台业务 API（cases/feedback/sessions）
+│   ├── log_pipeline/     # 整车日志摄取管线（M1-M6，独立子系统）
+│   ├── models/           # SQLAlchemy ORM 模型
+│   ├── services/         # 核心服务（LLM/VectorSearch/WorkspaceManager 等）
+│   ├── tasks/            # Arq 异步任务队列
+│   ├── tests/            # API 单元测试和集成测试
 │   └── README.md         # Backend 部署文档
-│
-├── data/                 # 数据持久化层
-│   ├── logs/             # 原始日志
-│   ├── eval/             # 评测用例与报告
-│   └── workspaces/       # Agent 运行时 Markdown 工作区（NEW）
 │
 ├── gateway/              # LiteLLM API 中转层
 │   └── ...
 ├── web/                  # Next.js 前端
+│   ├── src/app/api/      # API 路由（chat/upload/bundle/sessions）
+│   ├── src/components/   # React 组件（含 SessionSidebar/UploadSummaryCard）
 │   └── ...
 ├── docs/                 # 项目文档
-│   ├── Agent内存_Markdown化重构方案.md  # 核心内存架构设计（NEW）
-│   ├── Workspace评测基准报告.md          # 评测结果与性能基准（NEW）
-│   └── ...
-└── scripts/              # 统一部署脚本
-    └── deploy-all.sh     # 单机开发环境一键部署
+└── scripts/              # 统一脚本
+    ├── dev.sh            # 一键启动（Backend + Frontend + 按需 Gateway）
+    ├── test-ci.sh        # 本地 CI 验证（PR 前必跑）
+    └── deploy-all.sh     # 单机一键部署
 ```
 
 ---
@@ -176,12 +173,18 @@ open http://localhost:8000/docs
 | API测试 | 100% | ✅ 完成 |
 | MVP核心功能 | 100% | ✅ 完成 |
 | 前端交互功能 | 100% | ✅ 完成 |
-| **Agent 工作区内存重构 (Sprint 5)** | 100% | ✅ 完成 |
-| **后端核心逻辑（在线诊断增强）** | 90% | 🚧 进行中 |
-| 数据与演示场景 | 40% | 🚧 进行中 |
-| **评测与验收 (基准测试)** | 100% | ✅ 完成 |
+| 前端日志上传工作流 | 100% | ✅ 完成 |
+| **log_pipeline M1-M6** | 100% | ✅ 完成（107 项测试）|
+| **单元测试覆盖** | 100% | ✅ 后端 219 passed / 前端 201 passed |
+| **安全加固** | 100% | ✅ 完成（0 CVE）|
+| **开发工具链（CI/dev.sh）** | 100% | ✅ 完成 |
+| 后端核心逻辑（在线诊断增强） | 100% | ✅ 完成 |
+| 数据与演示场景 | 90% | ✅ 基本完成 |
+| 评测与验收 | 70% | 🚧 剩余人工评审 |
 
-**总体进度**: 约 **95%**
+**总体进度**: 约 **99%**（剩余：真实 Jira 数据同步、权限体系与操作审计、人工评审）
+
+> 📊 测试覆盖率（2026-05-03）：后端 219 passed；前端 statements 84.7% / branches 74.4% / lines 87.8%，全部高于红线。
 
 详细任务清单请查看：
 - [TODO.md](docs/TODO.md) - 项目任务清单（最新）
@@ -261,6 +264,5 @@ open http://localhost:8000/docs
 
 ---
 
-**项目状态**: 🚧 开发中（Sprint 5 工作区重构已通过，进入系统集成与演示场景准备阶段）
-**最后更新**: 2026-04-06
-**维护团队**: AI 开发专家
+**项目状态**: 🚧 开发中（Sprint 5 已完成，进入 Sprint 6 LLM 接入与生产部署阶段）
+**最后更新**: 2026-05-03
