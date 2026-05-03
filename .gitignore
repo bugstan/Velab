@@ -183,3 +183,4 @@ cursor.md
 !*/README.md
 !docs/**/*.md
 !*.example
+/package-lock.json
