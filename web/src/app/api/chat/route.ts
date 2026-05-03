@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   if (typeof body !== "object" || body === null) {
     return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400 });
   }
-  const { message, scenarioId, history } = body as Record<string, unknown>;
+  const { message, scenarioId, history, bundleId } = body as Record<string, unknown>;
   if (typeof message !== "string" || message.length === 0 || message.length > 10000) {
     return new Response(JSON.stringify({ error: "message must be a non-empty string (max 10000 chars)" }), { status: 400 });
   }
@@ -65,6 +65,14 @@ export async function POST(request: NextRequest) {
   }
   if (history !== undefined && !Array.isArray(history)) {
     return new Response(JSON.stringify({ error: "history must be an array" }), { status: 400 });
+  }
+  if (bundleId !== undefined) {
+    if (typeof bundleId !== "string" || bundleId.length > 36) {
+      return new Response(JSON.stringify({ error: "bundleId must be a valid UUID string" }), { status: 400 });
+    }
+    if (!/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(bundleId)) {
+      return new Response(JSON.stringify({ error: "bundleId must be a valid UUID" }), { status: 400 });
+    }
   }
 
   // 创建 AbortController 用于超时控制

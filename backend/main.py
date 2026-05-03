@@ -180,6 +180,19 @@ async def chat(request: Request):
     user_message: str = body.get("message", "")
     scenario_id: str = body.get("scenarioId", "fota-diagnostic")
     history: list[dict] = body.get("history", [])
+    bundle_id_raw: str | None = body.get("bundleId") or None
+
+    # 在 API 边界验证 bundle_id 格式（防止路径注入 / SSRF）
+    bundle_id: str | None = None
+    if bundle_id_raw is not None:
+        import re as _re
+        if not _re.fullmatch(
+            r"[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}",
+            bundle_id_raw, _re.IGNORECASE
+        ):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "bundleId must be a valid UUID"}, status_code=400)
+        bundle_id = bundle_id_raw
 
     async def event_generator():
         """SSE 事件生成器，负责流式推送诊断过程"""
@@ -197,7 +210,7 @@ async def chat(request: Request):
         event_count = 0
         try:
             # 调用 Orchestrator 执行诊断流程，逐个 yield SSE 事件
-            async for event in orchestrate(user_message, scenario_id, history):
+            async for event in orchestrate(user_message, scenario_id, history, bundle_id):
                 event_count += 1
                 yield {"data": json.dumps(event, ensure_ascii=False)}
         finally:

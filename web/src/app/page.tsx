@@ -939,6 +939,13 @@ export default function Home() {
       content: m.content,
     }));
 
+    // 提取当前会话中最近一条已完成的上传日志包 ID，传给后端 Agent 分析真实日志
+    const activeBundleId = (currentSnapshot?.messages ?? [])
+      .slice()
+      .reverse()
+      .flatMap((m) => m.uploadSummaries ?? [])
+      .find((s) => s.bundleId)?.bundleId ?? null;
+
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
@@ -1083,6 +1090,7 @@ export default function Home() {
           message,
           scenarioId: effectiveScenarioId,
           history: historyPayload,
+          ...(activeBundleId ? { bundleId: activeBundleId } : {}),
         }),
         signal: abortController.signal,
       });

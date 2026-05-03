@@ -261,10 +261,15 @@ async def orchestrate(
     user_message: str,
     scenario_id: str,
     conversation_history: list[dict] | None = None,
+    bundle_id: str | None = None,
 ) -> AsyncIterator[dict]:
     """
     Main orchestration flow. Yields SSE events as dicts:
       {"type": "step_start"|"step_progress"|"step_complete"|"content_start"|"content_delta"|"content_complete"|"done", ...}
+    
+    Args:
+        bundle_id: 可选的日志包 ID。若传入则 LogAnalyticsAgent 会优先分析该 bundle 的真实日志。
+                   如果未传入，则尝试从 conversation_history 中自动提取最近一条 upload_summary。
     """
     t_pipeline = time.perf_counter()
     chain_debug(
@@ -275,6 +280,23 @@ async def orchestrate(
         user_len=len(user_message),
         history_turns=len(conversation_history or []),
     )
+
+    # 若调用方未传入 bundle_id，则扫描对话历史自动提取最近一条 upload_summary 消息
+    if not bundle_id and conversation_history:
+        import re as _re
+        _UUID_RE = _re.compile(
+            r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$",
+            _re.IGNORECASE,
+        )
+        for msg in reversed(conversation_history):
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                content = msg.get("content")
+                if isinstance(content, dict) and content.get("systemKind") == "upload_summary":
+                    candidate = content.get("bundleId")
+                    if isinstance(candidate, str) and _UUID_RE.match(candidate):
+                        bundle_id = candidate
+                        chain_debug(log, step="orchestrate", event="BUNDLE_FROM_HISTORY", bundle_id=bundle_id)
+                        break
 
     # Determine which agents are available for this scenario
     agent_names = SCENARIO_AGENT_MAP.get(scenario_id, ["log_analytics"])
@@ -440,10 +462,12 @@ async def orchestrate(
 
         # Execute all agents concurrently
         async def _run_agent(agent, args):
-            # Inject workspace_path into agent context
-            agent_context = {}
+            # Inject workspace_path and bundle_id into agent context
+            agent_context: dict = {}
             if workspace_path:
                 agent_context["workspace_path"] = workspace_path
+            if bundle_id:
+                agent_context["bundle_id"] = bundle_id
             return await agent.execute(
                 task=args.get("task", ""),
                 keywords=args.get("keywords"),

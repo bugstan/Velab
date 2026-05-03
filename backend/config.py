@@ -163,6 +163,17 @@ class Settings(BaseSettings):
     # False = 强制全局 mock，适用于离线测试 / CI
     AGENTS_USE_LLM: bool = True
 
+    # ── 内部服务地址（Agent 内部调用 log_pipeline API 使用）──
+    BACKEND_BASE_URL: str = "http://localhost:8000"
+
+    # ── Embedding 向量检索开关 ──
+    # True  = 使用 OpenAI Embedding API 做真实向量检索（需 OPENAI_API_KEY）
+    # False = 使用 TF-IDF baseline（无需 API Key，默认）
+    AGENTS_USE_EMBEDDINGS: bool = False
+
+    # 预计算 embedding 索引的存放目录（相对于 backend/data/）
+    VECTOR_INDEX_DIR: str = "indexes/vector"
+
     # ── CORS 配置 ──
     # 逗号分隔的允许来源列表，生产环境应设置为具体域名
     # 示例: ALLOWED_ORIGINS=https://fota.example.com,https://admin.example.com

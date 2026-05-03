@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional
+
+import httpx
 
 from agents.base import BaseAgent, AgentResult, registry
 from common.chain_log import sync_step_timer
 from config import settings
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "logs"
+
+# 每次从 bundle API 拉取日志的行数上限（避免超出 LLM 上下文窗口）
+_BUNDLE_LOG_LIMIT = 2000
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +55,14 @@ class LogAnalyticsAgent(BaseAgent):
             task_preview=task[:120],
             keywords=(keywords or [])[:8],
         ):
-            log_content = self._load_logs(keywords)
+            bundle_id: Optional[str] = (context or {}).get("bundle_id")
+            if bundle_id:
+                log_content = await self._load_logs_from_bundle(bundle_id, keywords)
+                source_label = f"bundle:{bundle_id}"
+            else:
+                log_content = self._load_logs(keywords)
+                source_label = "data/logs"
+            log.debug("log_analytics source=%s lines=%d", source_label, len((log_content or "").splitlines()))
 
             if not log_content:
                 result = AgentResult(
@@ -57,7 +71,12 @@ class LogAnalyticsAgent(BaseAgent):
                     success=False,
                     confidence="low",
                     summary="未找到相关日志文件",
-                    detail="当前日志目录中没有与查询关键词匹配的日志记录。请确认日志文件已放置在 data/logs/ 目录中。",
+                    detail=(
+                        "当前会话中没有已上传的日志包，且本地日志目录也没有匹配的记录。"
+                        "请先上传日志文件，或确认 data/logs/ 目录中包含日志文件。"
+                        if not bundle_id
+                        else f"Bundle {bundle_id} 日志加载失败，且本地目录无兜底数据。"
+                    ),
                     sources=[],
                 )
                 await self._write_workspace(context, result)
@@ -74,6 +93,81 @@ class LogAnalyticsAgent(BaseAgent):
             analysis = self._mock_analyze(task, log_content, keywords or [])
             await self._write_workspace(context, analysis)
             return analysis
+
+    async def _load_logs_from_bundle(self, bundle_id: str, keywords: list[str] | None) -> str:
+        """Fetch log lines from the log_pipeline bundle API (NDJSON stream).
+
+        Falls back to data/logs/ if the bundle is not found or unavailable.
+        """
+        backend_base = getattr(settings, "BACKEND_BASE_URL", "http://localhost:8000")
+        url = f"{backend_base}/api/bundles/{bundle_id}/logs"
+        try:
+            # 先获取时间范围
+            status_url = f"{backend_base}/api/bundles/{bundle_id}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                st_resp = await client.get(status_url)
+                if st_resp.status_code == 404:
+                    log.warning("bundle %s not found, falling back to data/logs/", bundle_id)
+                    return self._load_logs(keywords)
+
+                st_data = st_resp.json() if st_resp.status_code == 200 else {}
+                # API 返回 valid_time_range_by_controller: {ctrl: {"start": float, "end": float}}
+                vtr: dict = st_data.get("valid_time_range_by_controller", {})
+                if not vtr:
+                    log.info("bundle %s has no valid time range yet, falling back", bundle_id)
+                    return self._load_logs(keywords)
+
+                starts = [v["start"] for v in vtr.values() if v.get("start") is not None]
+                ends = [v["end"] for v in vtr.values() if v.get("end") is not None]
+                if not starts or not ends:
+                    log.info("bundle %s time range incomplete, falling back", bundle_id)
+                    return self._load_logs(keywords)
+                t_start: str = str(min(starts))
+                t_end: str = str(max(ends))
+
+                params: dict = {"limit": _BUNDLE_LOG_LIMIT, "start": t_start, "end": t_end}
+
+                log_resp = await client.get(url, params=params)
+                if log_resp.status_code != 200:
+                    log.warning("bundle logs API returned %d, falling back", log_resp.status_code)
+                    return self._load_logs(keywords)
+
+                # 在 with 块内捕获响应文本，确保连接已完成缓冲
+                raw_text = log_resp.text
+
+            # 解析 NDJSON 行并可选按关键词过滤
+            lines: list[str] = []
+            for raw_line in raw_text.splitlines():
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    record: dict = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                # 将结构化记录合并为可读文本行
+                ts = record.get("ts") or record.get("timestamp", "")
+                ctrl = record.get("controller", "")
+                msg = record.get("msg") or record.get("message", "")
+                level = record.get("level", "")
+                text_line = f"[{ts}][{ctrl}][{level}] {msg}".strip()
+                if keywords:
+                    low = text_line.lower()
+                    if not any(k.lower() in low for k in keywords):
+                        continue
+                lines.append(text_line)
+
+            if not lines:
+                # 关键词过滤后无结果，fallback 到 mock
+                log.info("bundle %s has no lines matching keywords, falling back to data/logs/", bundle_id)
+                return self._load_logs(keywords)
+
+            header = f"=== bundle:{bundle_id} (lines={len(lines)}) ==="
+            return header + "\n" + "\n".join(lines)
+
+        except Exception as exc:
+            log.warning("Failed to load bundle %s logs: %s — falling back to data/logs/", bundle_id, exc)
+            return self._load_logs(keywords)
 
     async def _llm_analyze(self, task: str, log_content: str, keywords: list[str]) -> AgentResult:
         """Call LLM to analyze log content and return structured AgentResult."""
