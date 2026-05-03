@@ -60,6 +60,11 @@ jobs:
       - name: Run tests with pytest
         env:
           TEST_DATABASE_URL: postgresql://postgres:fota_password@localhost:5432/fota_db_test
+          POSTGRES_DB: fota_db_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fota_password
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
           STORAGE_ROOT: ./test_data
           PYTHONPATH: .
         run: |
