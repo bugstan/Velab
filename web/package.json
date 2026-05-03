@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -37,5 +37,8 @@
     "typescript": "^6.0.2",
     "undici": "^8.0.1",
     "vitest": "^4.1.2"
+  },
+  "overrides": {
+    "postcss": ">=8.5.10"
   }
 }
