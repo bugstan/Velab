@@ -45,8 +45,12 @@ class JiraKnowledgeAgent(BaseAgent):
             task_preview=task[:120],
             keywords=(keywords or [])[:8],
         ):
-            tickets = self._search_tickets(keywords or [], task)
-            documents = self._search_documents(keywords or [])
+            if settings.AGENTS_USE_EMBEDDINGS:
+                tickets = await self._search_tickets_embed(keywords or [], task)
+                documents = await self._search_documents_embed(keywords or [], task)
+            else:
+                tickets = self._search_tickets(keywords or [], task)
+                documents = self._search_documents(keywords or [])
 
             if not tickets and not documents:
                 result = AgentResult(
@@ -142,6 +146,28 @@ class JiraKnowledgeAgent(BaseAgent):
             await update_todo_status(ws_path, "历史工单关联", completed=result.success)
         except Exception as e:
             log.warning("Workspace write failed in %s: %s", self.name, e)
+
+    async def _search_tickets_embed(self, keywords: list[str], task: str) -> list[dict]:
+        """Embedding 模式搜索 Jira 工单（语义相似度）。"""
+        from services.vector_search import VectorSearchService
+        try:
+            svc = VectorSearchService(use_embeddings=True)
+            tickets = self._load_mock_tickets()
+            return await svc.async_search_jira_issues(task, tickets, top_k=5)
+        except Exception as exc:
+            log.warning("Embedding ticket search failed, falling back to keyword: %s", exc)
+            return self._search_tickets(keywords, task)
+
+    async def _search_documents_embed(self, keywords: list[str], task: str) -> list[dict]:
+        """Embedding 模式搜索技术文档（语义相似度）。"""
+        from services.vector_search import VectorSearchService
+        try:
+            svc = VectorSearchService(use_embeddings=True)
+            docs = self._load_mock_docs()
+            return await svc.async_search_documents(task, docs, top_k=3)
+        except Exception as exc:
+            log.warning("Embedding document search failed, falling back to keyword: %s", exc)
+            return self._search_documents(keywords)
 
     def _search_tickets(self, keywords: list[str], task: str = "") -> list[dict]:
         """Search mock Jira tickets by keywords or ticket numbers extracted from task text."""

@@ -3,7 +3,7 @@
 
 两种运行模式：
 1. Baseline（无 LLM）：使用 TF-IDF + 余弦相似度做文本匹配
-2. Embedding（需 LLM）：使用 embedding 模型生成向量后检索（预留接口）
+2. Embedding（需 LLM）：使用 OpenAI embedding 模型生成向量后检索，支持预计算索引持久化
 
 作者：FOTA 诊断平台团队
 创建时间：2026-04-06
@@ -11,9 +11,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import math
 import re
+from pathlib import Path
 from collections import Counter
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -36,10 +39,12 @@ class VectorSearchService:
         self.use_embeddings = use_embeddings
         self._idf_cache: Dict[str, float] = {}
         self._doc_vectors: List[Tuple[str, Dict[str, float], Dict[str, Any]]] = []
+        # Embedding 模式存储：(text_preview, float_vector, metadata)
+        self._embed_vectors: List[Tuple[str, List[float], Dict[str, Any]]] = []
 
     # ── 公共接口 ──
 
-    def index_documents(self, documents: List[Dict[str, Any]], text_field: str = "text") -> int:
+    async def index_documents(self, documents: List[Dict[str, Any]], text_field: str = "text") -> int:
         """
         索引文档集合
 
@@ -51,10 +56,10 @@ class VectorSearchService:
             索引的文档数量
         """
         if self.use_embeddings:
-            return self._index_with_embeddings(documents, text_field)
+            return await self._index_with_embeddings(documents, text_field)
         return self._index_with_tfidf(documents, text_field)
 
-    def search(
+    async def search(
         self,
         query: str,
         top_k: int = 5,
@@ -72,7 +77,7 @@ class VectorSearchService:
             按相似度降序排列的搜索结果
         """
         if self.use_embeddings:
-            return self._search_with_embeddings(query, top_k, min_score)
+            return await self._search_with_embeddings(query, top_k, min_score)
         return self._search_with_tfidf(query, top_k, min_score)
 
     def search_jira_issues(
@@ -239,20 +244,138 @@ class VectorSearchService:
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
 
-    # ── Embedding 实现（预留） ──
+    # ── Embedding 实现 ──
 
-    def _index_with_embeddings(self, documents: List[Dict[str, Any]], text_field: str) -> int:
-        """使用 embedding 模型索引（需 API Key）"""
-        logger.warning("Embedding indexing not yet available, falling back to TF-IDF")
-        return self._index_with_tfidf(documents, text_field)
+    @staticmethod
+    def _cosine_similarity_float(v1: List[float], v2: List[float]) -> float:
+        """两个 float 向量的余弦相似度。"""
+        if not v1 or not v2 or len(v1) != len(v2):
+            return 0.0
+        dot = sum(a * b for a, b in zip(v1, v2))
+        norm1 = math.sqrt(sum(a * a for a in v1))
+        norm2 = math.sqrt(sum(b * b for b in v2))
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot / (norm1 * norm2)
 
-    def _search_with_embeddings(
+    async def _index_with_embeddings(self, documents: List[Dict[str, Any]], text_field: str) -> int:
+        """使用 OpenAI embedding 模型批量索引文档（并发请求）。"""
+        from services.llm import get_embeddings
+
+        self._embed_vectors = []
+        texts = [doc.get(text_field, "")[:8000] for doc in documents]
+        tasks = [get_embeddings(text) for text in texts]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for doc, vec in zip(documents, results):
+            if isinstance(vec, Exception):
+                logger.warning("Embedding failed for doc '%s': %s", doc.get(text_field, "")[:60], vec)
+                continue
+            preview = doc.get(text_field, "")[:200]
+            meta = doc.get("metadata", doc)
+            self._embed_vectors.append((preview, vec, meta))
+
+        logger.info("Embedding indexed %d/%d documents", len(self._embed_vectors), len(documents))
+        return len(self._embed_vectors)
+
+    async def _search_with_embeddings(
         self, query: str, top_k: int, min_score: float
     ) -> List[Dict[str, Any]]:
-        """使用 embedding 模型搜索（需 API Key）"""
-        logger.warning("Embedding search not yet available, falling back to TF-IDF")
-        return self._search_with_tfidf(query, top_k, min_score)
+        """使用 embedding 相似度搜索；若索引为空则 fallback 到 TF-IDF。"""
+        if not self._embed_vectors:
+            logger.warning("Embedding index empty, falling back to TF-IDF")
+            return self._search_with_tfidf(query, top_k, min_score)
+
+        from services.llm import get_embeddings
+        query_vec = await get_embeddings(query[:8000])
+
+        scored = []
+        for text_preview, doc_vec, metadata in self._embed_vectors:
+            score = self._cosine_similarity_float(query_vec, doc_vec)
+            if score >= min_score:
+                scored.append({
+                    "score": round(score, 4),
+                    "text_preview": text_preview,
+                    "metadata": metadata,
+                })
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:top_k]
+
+    # ── Embedding 索引持久化 ──
+
+    def save_embed_index(self, path: Path) -> int:
+        """将内存中的 embedding 向量序列化到 JSON 文件，供下次启动直接加载。
+
+        使用 .partial + os.replace() 原子写入，防止进程崩溃导致文件损坏。
+        """
+        import os
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = [
+            {"preview": preview, "vector": vec, "metadata": meta}
+            for preview, vec, meta in self._embed_vectors
+        ]
+        partial_path = path.with_suffix(path.suffix + ".partial")
+        partial_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(partial_path, path)
+        logger.info("Saved %d embedding vectors to %s", len(payload), path)
+        return len(payload)
+
+    def load_embed_index(self, path: Path) -> int:
+        """从 JSON 文件加载预计算的 embedding 向量。"""
+        if not path.exists():
+            return 0
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        self._embed_vectors = [
+            (item["preview"], item["vector"], item["metadata"])
+            for item in payload
+        ]
+        logger.info("Loaded %d embedding vectors from %s", len(self._embed_vectors), path)
+        return len(self._embed_vectors)
+
+    # ── Async 高级接口（供 Agent 直接使用）──
+
+    async def async_search_jira_issues(
+        self,
+        query: str,
+        tickets: List[Dict[str, Any]],
+        top_k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Embedding 模式搜索 Jira 工单：先批量 embed 工单文本，再 embed 查询做相似度排序。
+        结果格式与 search_jira_issues 相同。
+        """
+        docs = []
+        for t in tickets:
+            text = (
+                f"{t.get('key', '')} {t.get('summary', '')} "
+                f"{t.get('description', '')} {t.get('resolution', '')}"
+            )
+            docs.append({"text": text, "metadata": t})
+
+        await self._index_with_embeddings(docs, "text")
+        results = await self._search_with_embeddings(query, top_k, min_score=0.3)
+        return [{**r["metadata"], "similarity_score": r["score"]} for r in results]
+
+    async def async_search_documents(
+        self,
+        query: str,
+        documents: List[Dict[str, Any]],
+        top_k: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """
+        Embedding 模式搜索技术文档。
+        结果格式与 search_documents 相同。
+        """
+        docs = []
+        for d in documents:
+            text = f"{d.get('title', '')} {d.get('excerpt', '')} {d.get('content', '')}"
+            docs.append({"text": text, "metadata": d})
+
+        await self._index_with_embeddings(docs, "text")
+        results = await self._search_with_embeddings(query, top_k, min_score=0.3)
+        return [{**r["metadata"], "similarity_score": r["score"]} for r in results]
 
 
-# 全局单例
+# 全局单例：AGENTS_USE_EMBEDDINGS 由 config 控制，在 main.py lifespan 中初始化
 vector_service = VectorSearchService(use_embeddings=False)
