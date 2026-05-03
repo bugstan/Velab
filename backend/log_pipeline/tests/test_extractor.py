@@ -271,7 +271,7 @@ def test_extractor_rar_basic(tmp_path: Path, work_root: Path):
     archive = tmp_path / "test.rar"
     archive.write_bytes(b"placeholder")
 
-    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+    with patch("rarfile.RarFile", return_value=rf):
         files = list(Extractor(work_root).extract(archive))
 
     assert len(files) == 1
@@ -288,7 +288,7 @@ def test_extractor_rar_skips_directory_entries(tmp_path: Path, work_root: Path):
     archive = tmp_path / "dirs.rar"
     archive.write_bytes(b"placeholder")
 
-    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+    with patch("rarfile.RarFile", return_value=rf):
         files = list(Extractor(work_root).extract(archive))
 
     rels = [f.relative_path for f in files]
@@ -304,7 +304,7 @@ def test_extractor_rar_normalizes_windows_backslash_paths(tmp_path: Path, work_r
     archive = tmp_path / "win.rar"
     archive.write_bytes(b"placeholder")
 
-    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+    with patch("rarfile.RarFile", return_value=rf):
         files = list(Extractor(work_root).extract(archive))
 
     assert len(files) == 1
@@ -323,7 +323,7 @@ def test_extractor_rar_nested_zip_expands(tmp_path: Path, work_root: Path):
     archive = tmp_path / "outer.rar"
     archive.write_bytes(b"placeholder")
 
-    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+    with patch("rarfile.RarFile", return_value=rf):
         files = list(Extractor(work_root).extract(archive))
 
     rels = [f.relative_path for f in files]

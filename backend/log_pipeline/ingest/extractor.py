@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
-import rarfile
-
 logger = logging.getLogger(__name__)
 
 _CHUNK = 1 << 20  # 1 MiB streaming chunk
@@ -232,7 +230,14 @@ class Extractor:
         depth: int,
         source_archive: Optional[str],
     ) -> Iterator[ExtractedFile]:
-        with rarfile.RarFile(str(archive_path)) as rf:
+        try:
+            import rarfile as _rarfile
+        except ImportError as exc:
+            raise ImportError(
+                "RAR support requires the 'rarfile' package. "
+                "Run: pip install rarfile==4.2"
+            ) from exc
+        with _rarfile.RarFile(str(archive_path)) as rf:
             for info in rf.infolist():
                 if info.is_dir():
                     continue
