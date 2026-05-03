@@ -53,7 +53,32 @@ Velab/
 
 ## 🚀 快速启动
 
-### 开发环境
+### ⚡ 一键启动（推荐）
+
+```bash
+# 克隆并进入项目
+git clone https://github.com/tomguo2000/Velab.git && cd Velab
+
+# 配置后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，设置 DEPLOYMENT_MODE（A 或 B）及对应的 API Key
+
+# 一键启动（同时启动 Backend + Frontend，按需启动 Gateway）
+bash scripts/dev.sh
+```
+
+脚本会自动：
+- 停止占用 8000 / 3000 端口的旧进程
+- 读取 `backend/.env` 中的 `DEPLOYMENT_MODE`：
+  - **场景 A**（国内）：自动检测并启动 LiteLLM Gateway（4000 端口）
+  - **场景 B**（海外）：跳过 Gateway，直连 Claude / OpenAI
+- 按 `Ctrl+C` 同时停止所有子服务
+
+> **场景 A 前置条件**：需先配置 `gateway/.env` 并安装 `litellm`（`pip install litellm`）
+
+---
+
+### 手动启动（分步）
 
 #### 1. 启动 Gateway（场景 A：平台在国内）
 
@@ -226,16 +251,7 @@ open http://localhost:8000/docs
 
 ---
 
-## 📞 技术支持
-
-如有问题，请查看：
-1. 各组件的 README 文档
-2. [docs](docs/) 目录下的详细设计文档
-3. [生产部署指南](docs/生产部署指南_V1.md)
-
----
-
-## 📝 开发原则
+##  开发原则
 
 - ✅ **反 Docker**：生产部署使用 Systemd 管理 Python 虚拟环境
 - ✅ **务实选型**：优先选择成熟稳定的技术栈
