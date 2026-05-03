@@ -494,8 +494,8 @@ async def orchestrate(
                 },
             }
 
-        # Step N: RCA Synthesizer (if we have multiple agent results)
-        if len(agent_results) > 0:
+        # Step N: RCA Synthesizer (仅当场景明确包含 rca_synthesizer 时运行)
+        if len(agent_results) > 0 and "rca_synthesizer" in agent_names:
             synthesizer_step_num = 2 + len(tool_calls)
             synthesizer = registry.get("rca_synthesizer")
             
@@ -549,7 +549,7 @@ async def orchestrate(
                     }
 
     # Final step: Response Generator
-    final_step_num = 2 + len(tool_calls) + (1 if len(agent_results) > 0 and registry.get("rca_synthesizer") else 0) if tool_calls else 2
+    final_step_num = 2 + len(tool_calls) + (1 if len(agent_results) > 0 and "rca_synthesizer" in agent_names else 0) if tool_calls else 2
     yield {
         "type": "step_start",
         "step": {

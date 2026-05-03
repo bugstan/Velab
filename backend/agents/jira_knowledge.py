@@ -8,10 +8,26 @@ from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult, registry
 from common.chain_log import sync_step_timer
+from config import settings
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "jira_mock"
 
 log = logging.getLogger(__name__)
+
+_SYSTEM_PROMPT = """\
+你是 FOTA 历史工单分析专家。根据检索到的相关 Jira 工单和技术文档，对当前故障做历史案例关联分析。
+
+**必须**按以下 Markdown 格式输出：
+
+## 🔗 最相关历史案例
+（指出最匹配的 1-2 个工单，说明与当前问题的相似点）
+
+## 📋 历史修复方案
+（提炼已验证的修复措施，分点列出）
+
+## ⚠️ 注意事项
+（历史案例中出现过的陷阱或需要特别注意的点）
+"""
 
 
 class JiraKnowledgeAgent(BaseAgent):
@@ -29,7 +45,7 @@ class JiraKnowledgeAgent(BaseAgent):
             task_preview=task[:120],
             keywords=(keywords or [])[:8],
         ):
-            tickets = self._search_tickets(keywords or [])
+            tickets = self._search_tickets(keywords or [], task)
             documents = self._search_documents(keywords or [])
 
             if not tickets and not documents:
@@ -71,8 +87,46 @@ class JiraKnowledgeAgent(BaseAgent):
                 detail="\n".join(detail_parts),
                 sources=sources,
             )
+
+            # LLM 总结层：在检索结果基础上生成叙述性分析
+            if settings.AGENTS_USE_LLM and (tickets or documents):
+                try:
+                    result = await self._llm_summarize(task, result)
+                except Exception as exc:
+                    log.warning("Jira LLM summarize failed, keeping retrieval result: %s", exc)
+
             await self._write_workspace(context, result)
             return result
+
+    async def _llm_summarize(self, task: str, retrieval_result: AgentResult) -> AgentResult:
+        """Use LLM to synthesize a narrative analysis from retrieved tickets/docs."""
+        from services.llm import chat_completion
+
+        user_msg = (
+            f"当前故障描述：{task}\n\n"
+            f"检索到的历史资料：\n{retrieval_result.detail}\n\n"
+            "请对上述资料做历史案例关联分析。"
+        )
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ]
+        response = await chat_completion(messages, model="agent-model", temperature=0.3, max_tokens=1024)
+        llm_text: str = getattr(response, "content", None) or ""
+        if not llm_text.strip():
+            return retrieval_result
+
+        # 保留原始检索来源，只替换 detail
+        return AgentResult(
+            agent_name=retrieval_result.agent_name,
+            display_name=retrieval_result.display_name,
+            success=True,
+            confidence=retrieval_result.confidence,
+            summary=retrieval_result.summary,
+            detail=llm_text.strip(),
+            sources=retrieval_result.sources,
+            raw_data={**(retrieval_result.raw_data or {}), "llm": True},
+        )
 
     async def _write_workspace(self, context: dict | None, result: AgentResult) -> None:
         """将检索发现写入 workspace (可选，降级安全)"""
@@ -89,9 +143,22 @@ class JiraKnowledgeAgent(BaseAgent):
         except Exception as e:
             log.warning("Workspace write failed in %s: %s", self.name, e)
 
-    def _search_tickets(self, keywords: list[str]) -> list[dict]:
-        """Search mock Jira tickets by keywords."""
+    def _search_tickets(self, keywords: list[str], task: str = "") -> list[dict]:
+        """Search mock Jira tickets by keywords or ticket numbers extracted from task text."""
+        import re
         tickets = self._load_mock_tickets()
+        # 从 task 文本中直接提取工单号（如 FOTA-9123）
+        ticket_refs = re.findall(r'[A-Z]+-\d+', task.upper())
+        if ticket_refs:
+            # 按工单号精确匹配的放在最前，再补充其他匹配结果
+            exact = [t for t in tickets if t['key'].upper() in ticket_refs]
+            rest_keywords = list(set(keywords) | {ref.split('-')[0] for ref in ticket_refs})
+            fuzzy = [t for t in tickets if t not in exact]
+            if rest_keywords:
+                fuzzy = [t for t in fuzzy
+                         if any(k.lower() in f"{t['key']} {t['summary']} {t['description']}".lower()
+                                for k in rest_keywords)]
+            return (exact + fuzzy)[:5]
         if not keywords:
             return tickets[:3]
         results = []

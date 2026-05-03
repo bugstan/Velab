@@ -7,8 +7,31 @@ from typing import List
 
 from agents.base import BaseAgent, AgentResult, registry
 from common.chain_log import sync_step_timer
+from config import settings
 
 log = logging.getLogger(__name__)
+
+_SYSTEM_PROMPT = """\
+你是车载 FOTA 系统根因综合分析专家。你收到了来自多个专项分析 Agent 的分析结果（日志分析、历史工单、技术文档），\
+需要综合所有证据给出权威的根因分析报告。
+
+**必须**按以下 Markdown 格式输出，语言简洁专业：
+
+## 🎯 诊断结论
+（1-3 句话，说明根本原因、受影响的 ECU、故障链路）
+
+## 📊 多路证据汇总
+（从各 Agent 结论中提炼关键证据，用 • 分点列出，标明来源）
+
+## 💡 修复建议
+（优先级排序的可操作步骤，分为"立即处理"和"长期优化"两类）
+
+## 📚 证据来源
+（列出引用的工单 ID、文档名称、日志文件）
+
+## 置信度
+（仅输出 high / medium / low，综合所有 Agent 的置信度判断）
+"""
 
 
 class RCASynthesizerAgent(BaseAgent):
@@ -56,10 +79,89 @@ class RCASynthesizerAgent(BaseAgent):
             
             # Read workspace notes for supplementary context
             workspace_notes = self._read_workspace_notes(context)
-            
-            # Synthesize results
+
+            # 优先使用 LLM 综合，失败则降级到规则综合
+            if settings.AGENTS_USE_LLM:
+                try:
+                    return await self._llm_synthesize(task, agent_results, workspace_notes)
+                except Exception as exc:
+                    log.warning("RCA LLM synthesis failed, falling back to rule-based: %s", exc)
+
+            # Fallback: rule-based synthesis
             return self._synthesize_results(task, agent_results, workspace_notes)
     
+    async def _llm_synthesize(self, task: str, agent_results: List[AgentResult], workspace_notes: str) -> AgentResult:
+        """Use LLM to generate authoritative RCA from all agent results."""
+        from services.llm import chat_completion
+
+        # 构建各 Agent 结论的摘要文本
+        results_text_parts = []
+        all_sources = []
+        for r in agent_results:
+            if r.success:
+                results_text_parts.append(
+                    f"### {r.display_name}\n"
+                    f"**置信度**: {r.confidence}\n"
+                    f"**摘要**: {r.summary}\n\n"
+                    f"{(r.detail or '')[:1500]}"
+                )
+                all_sources.extend(r.sources or [])
+
+        if not results_text_parts:
+            raise ValueError("No successful agent results to synthesize")
+
+        results_text = "\n\n---\n\n".join(results_text_parts)
+        notes_section = f"\n\n**工作区补充记录**：\n{workspace_notes[:800]}" if workspace_notes else ""
+
+        user_msg = (
+            f"诊断任务：{task}\n\n"
+            f"各专项 Agent 分析结果如下：\n\n{results_text}"
+            f"{notes_section}\n\n"
+            "请综合以上所有证据，给出完整的根因分析报告。"
+        )
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ]
+        response = await chat_completion(messages, model="agent-model", temperature=0.3, max_tokens=2048)
+        llm_text: str = getattr(response, "content", None) or ""
+        if not llm_text.strip():
+            raise ValueError("Empty LLM response")
+
+        # 提取置信度
+        confidence = self._calculate_confidence([r for r in agent_results if r.success])
+        for line in llm_text.splitlines():
+            stripped = line.strip().lower()
+            if stripped in {"high", "medium", "low"}:
+                confidence = stripped
+                break
+
+        # 提取 summary（诊断结论后第一个非空行）
+        summary = f"综合分析完成 - 基于 {len([r for r in agent_results if r.success])} 个 Agent 的分析结果"
+        in_conclusion = False
+        for line in llm_text.splitlines():
+            if "诊断结论" in line:
+                in_conclusion = True
+                continue
+            if in_conclusion and line.strip() and not line.startswith("#"):
+                summary = line.strip()[:120]
+                break
+
+        return AgentResult(
+            agent_name=self.name,
+            display_name=self.display_name,
+            success=True,
+            confidence=confidence,
+            summary=summary,
+            detail=llm_text.strip(),
+            sources=all_sources,
+            raw_data={
+                "agent_count": len(agent_results),
+                "successful_count": len([r for r in agent_results if r.success]),
+                "llm": True,
+            },
+        )
+
     def _read_workspace_notes(self, context: dict | None) -> str:
         """读取工作区 notes.md 作为补充推理上下文（可选，降级安全）"""
         if not context or "workspace_path" not in context:

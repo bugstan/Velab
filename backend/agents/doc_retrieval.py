@@ -18,6 +18,7 @@ from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult, registry
 from common.chain_log import sync_step_timer
+from config import settings
 from services.vector_search import vector_service
 
 log = logging.getLogger(__name__)
@@ -25,6 +26,21 @@ log = logging.getLogger(__name__)
 # 文档数据目录
 DOC_DIR = Path(__file__).resolve().parent.parent / "data" / "docs"
 JIRA_DIR = Path(__file__).resolve().parent.parent / "data" / "jira_mock"
+
+_SYSTEM_PROMPT = """\
+你是 FOTA 技术文档专家。根据检索到的技术规范和文档片段，提炼与当前故障直接相关的技术要点。
+
+**必须**按以下 Markdown 格式输出：
+
+## 📖 技术规范要点
+（与故障直接相关的规范条款或设计约定，分点列出）
+
+## 🔍 文档支撑分析
+（文档中的技术细节如何解释当前故障现象）
+
+## ✅ 最佳实践建议
+（文档中记录的最佳实践或已知解决方案）
+"""
 
 
 class DocRetrievalAgent(BaseAgent):
@@ -114,8 +130,45 @@ class DocRetrievalAgent(BaseAgent):
                 sources=sources,
                 raw_data={"matched_count": len(results)},
             )
+
+            # LLM 总结层：将检索片段提炼为叙述性技术分析
+            if settings.AGENTS_USE_LLM:
+                try:
+                    result = await self._llm_summarize(task, result)
+                except Exception as exc:
+                    log.warning("Doc LLM summarize failed, keeping retrieval result: %s", exc)
+
             await self._write_workspace(context, result)
             return result
+
+    async def _llm_summarize(self, task: str, retrieval_result: AgentResult) -> AgentResult:
+        """Use LLM to synthesize technical insights from retrieved document snippets."""
+        from services.llm import chat_completion
+
+        user_msg = (
+            f"当前故障描述：{task}\n\n"
+            f"检索到的技术文档片段：\n{retrieval_result.detail[:3000]}\n\n"
+            "请根据上述文档片段，提炼与当前故障相关的技术要点。"
+        )
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ]
+        response = await chat_completion(messages, model="agent-model", temperature=0.3, max_tokens=1024)
+        llm_text: str = getattr(response, "content", None) or ""
+        if not llm_text.strip():
+            return retrieval_result
+
+        return AgentResult(
+            agent_name=retrieval_result.agent_name,
+            display_name=retrieval_result.display_name,
+            success=True,
+            confidence=retrieval_result.confidence,
+            summary=retrieval_result.summary,
+            detail=llm_text.strip(),
+            sources=retrieval_result.sources,
+            raw_data={**(retrieval_result.raw_data or {}), "llm": True},
+        )
 
     async def _write_workspace(self, context: dict | None, result: AgentResult) -> None:
         """将文档检索结果写入 workspace (可选，降级安全)"""
