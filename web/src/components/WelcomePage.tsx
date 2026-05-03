@@ -3,7 +3,7 @@
 import { PRESET_QUESTIONS, PresetQuestion } from "@/lib/types";
 
 interface WelcomePageProps {
-  onQuestionClick: (question: string) => void;
+  onQuestionClick: (question: string, scenarioId?: string) => void;
 }
 
 export default function WelcomePage({ onQuestionClick }: WelcomePageProps) {
@@ -19,7 +19,7 @@ export default function WelcomePage({ onQuestionClick }: WelcomePageProps) {
         {PRESET_QUESTIONS.map((q: PresetQuestion) => (
           <button
             key={q.id}
-            onClick={() => onQuestionClick(q.text)}
+            onClick={() => onQuestionClick(q.text, q.scenarioId)}
             className="flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left hover:border-opacity-60 transition-all group cursor-pointer"
             style={{
               background: "var(--bg-secondary)",

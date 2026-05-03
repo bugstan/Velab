@@ -51,7 +51,7 @@ describe('WelcomePage Component', () => {
 
             await user.click(button)
 
-            expect(mockOnQuestionClick).toHaveBeenCalledWith(firstQuestion.text)
+            expect(mockOnQuestionClick).toHaveBeenCalledWith(firstQuestion.text, firstQuestion.scenarioId)
         })
 
         it('每个问题都应该可以点击', async () => {
@@ -62,7 +62,7 @@ describe('WelcomePage Component', () => {
                 const button = screen.getByText(question.text)
                 await user.click(button)
 
-                expect(mockOnQuestionClick).toHaveBeenCalledWith(question.text)
+                expect(mockOnQuestionClick).toHaveBeenCalledWith(question.text, question.scenarioId)
             }
 
             expect(mockOnQuestionClick).toHaveBeenCalledTimes(PRESET_QUESTIONS.length)

@@ -7,7 +7,7 @@
 import { render, screen, waitFor } from '@/__tests__/utils/test-utils'
 import FeedbackButtons from '@/components/FeedbackButtons'
 import userEvent from '@testing-library/user-event'
-import { vi } from 'vitest'
+import { vi, describe, it, expect } from 'vitest'
 
 describe('FeedbackButtons Component', () => {
     describe('基本渲染', () => {

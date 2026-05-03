@@ -20,14 +20,14 @@ describe('InputBar Component', () => {
 
     describe('基本渲染', () => {
         it('应该渲染输入框', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             expect(input).toBeInTheDocument()
         })
 
         it('应该渲染所有按钮', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const buttons = screen.getAllByRole('button')
             // + 按钮、附件按钮、麦克风按钮、Run 按钮
@@ -35,13 +35,13 @@ describe('InputBar Component', () => {
         })
 
         it('非运行状态应该显示 Run 按钮', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             expect(screen.getByText('Run')).toBeInTheDocument()
         })
 
         it('运行状态应该显示 Stop 按钮', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             expect(screen.getByText('Stop')).toBeInTheDocument()
         })
@@ -50,7 +50,7 @@ describe('InputBar Component', () => {
     describe('输入交互', () => {
         it('应该能够输入文本', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question') as HTMLInputElement
 
@@ -61,7 +61,7 @@ describe('InputBar Component', () => {
 
         it('输入文本时应该更新状态', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question') as HTMLInputElement
 
@@ -74,7 +74,7 @@ describe('InputBar Component', () => {
     describe('发送消息', () => {
         it('提交表单应该调用 onSend', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             const form = input.closest('form')!
@@ -87,7 +87,7 @@ describe('InputBar Component', () => {
 
         it('点击 Run 按钮应该发送消息', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             const runButton = screen.getByText('Run')
@@ -100,7 +100,7 @@ describe('InputBar Component', () => {
 
         it('发送后应该清空输入框', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question') as HTMLInputElement
             const form = input.closest('form')!
@@ -115,7 +115,7 @@ describe('InputBar Component', () => {
 
         it('应该去除首尾空格', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             const form = input.closest('form')!
@@ -129,7 +129,7 @@ describe('InputBar Component', () => {
 
     describe('验证逻辑', () => {
         it('空消息不应该发送', async () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const form = screen.getByPlaceholderText('Ask a question').closest('form')!
 
@@ -140,7 +140,7 @@ describe('InputBar Component', () => {
 
         it('只有空格的消息不应该发送', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             const form = input.closest('form')!
@@ -153,7 +153,7 @@ describe('InputBar Component', () => {
 
         it('运行中时不应该发送新消息', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             const form = input.closest('form')!
@@ -168,7 +168,7 @@ describe('InputBar Component', () => {
     describe('Stop 功能', () => {
         it('点击 Stop 按钮应该调用 onStop', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const stopButton = screen.getByText('Stop')
             await user.click(stopButton)
@@ -177,7 +177,7 @@ describe('InputBar Component', () => {
         })
 
         it('Stop 按钮应该是 button 类型而非 submit', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={true} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const stopButton = screen.getByText('Stop')
             expect(stopButton).toHaveAttribute('type', 'button')
@@ -186,7 +186,7 @@ describe('InputBar Component', () => {
 
     describe('按钮状态', () => {
         it('输入为空时 Run 按钮应该半透明', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const runButton = screen.getByText('Run')
             expect(runButton).toHaveStyle({ opacity: 0.5 })
@@ -194,7 +194,7 @@ describe('InputBar Component', () => {
 
         it('有输入时 Run 按钮应该完全不透明', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
             await user.type(input, 'Test')
@@ -207,7 +207,7 @@ describe('InputBar Component', () => {
     describe('辅助按钮', () => {
         it('应该渲染 + 按钮', () => {
             const { container } = render(
-                <InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />
+                <InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />
             )
 
             // + 按钮是第一个 button
@@ -216,7 +216,7 @@ describe('InputBar Component', () => {
         })
 
         it('应该渲染附件按钮', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const buttons = screen.getAllByRole('button')
             // 附件按钮应该存在（通过 SVG 路径识别）
@@ -224,7 +224,7 @@ describe('InputBar Component', () => {
         })
 
         it('应该渲染麦克风按钮', () => {
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const buttons = screen.getAllByRole('button')
             // 麦克风按钮应该存在
@@ -233,7 +233,7 @@ describe('InputBar Component', () => {
 
         it('辅助按钮应该是 button 类型', () => {
             const { container } = render(
-                <InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />
+                <InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />
             )
 
             const buttons = container.querySelectorAll('button[type="button"]')
@@ -245,7 +245,7 @@ describe('InputBar Component', () => {
     describe('键盘交互', () => {
         it('按 Enter 应该提交表单', async () => {
             const user = userEvent.setup()
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question')
 
@@ -259,7 +259,7 @@ describe('InputBar Component', () => {
         it('应该处理非常长的输入', async () => {
             const longMessage = 'A'.repeat(10000)
 
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question') as HTMLTextAreaElement
             const form = input.closest('form')!
@@ -274,7 +274,7 @@ describe('InputBar Component', () => {
         it('应该处理特殊字符', async () => {
             const specialMessage = '<script>alert("xss")</script>'
 
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question') as HTMLTextAreaElement
             const form = input.closest('form')!
@@ -289,7 +289,7 @@ describe('InputBar Component', () => {
         it('应该处理 Unicode 字符', async () => {
             const unicodeMessage = '你好世界 🚀 émojis'
 
-            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} />)
+            render(<InputBar onSend={mockOnSend} isRunning={false} onStop={mockOnStop} onUploadFiles={mockOnUploadFiles} />)
 
             const input = screen.getByPlaceholderText('Ask a question') as HTMLTextAreaElement
             const form = input.closest('form')!

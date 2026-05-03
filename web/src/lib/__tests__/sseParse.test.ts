@@ -199,7 +199,7 @@ describe('parseSSEBuffer', () => {
             // 应该解析出 2 个事件
             expect(result2.events.length).toBeGreaterThanOrEqual(1)
             // 至少应该包含 event2
-            const hasEvent2 = result2.events.some((e: Record<string, unknown>) => e.type === 'event2')
+            const hasEvent2 = result2.events.some((e: unknown) => (e as Record<string, unknown>).type === 'event2')
             expect(hasEvent2).toBe(true)
         })
     })

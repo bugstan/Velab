@@ -103,33 +103,35 @@ export interface PresetQuestion {
   id: string;
   text: string;
   icon: string;
+  /** 点击时自动切换到此场景 */
+  scenarioId?: string;
 }
 
 export const DEMO_SCENARIOS: DemoScenario[] = [
   {
     id: "fota-diagnostic",
     name: "Maxus FOTA Diagnostic Demo",
-    description: "基础 FOTA 诊断分析",
+    description: "日志分析 + 技术文档检索",
   },
   {
     id: "fota-jira",
     name: "Maxus FOTA Diagnostic with Jira Demo",
-    description: "FOTA 诊断 + Jira 工单检索",
+    description: "日志分析 + Jira 历史工单 + 文档检索",
   },
   {
     id: "fleet-analytics",
     name: "Fleet Data Analytics Demo",
-    description: "车队数据分析",
+    description: "车队日志统计分析",
   },
   {
     id: "ces-demo",
     name: "CES Demo",
-    description: "CES 展会演示",
+    description: "全链路演示：日志 + Jira + 文档 + RCA 综合分析",
   },
   {
     id: "data-acquisitions",
     name: "Data Acquisitions Demo",
-    description: "数据采集演示",
+    description: "日志解析管线演示",
   },
 ];
 
@@ -143,6 +145,7 @@ export const PRESET_QUESTIONS: PresetQuestion[] = [
     id: "q2",
     text: "查询类似 FOTA-9123 的历史案例",
     icon: "📋",
+    scenarioId: "fota-jira",
   },
   {
     id: "q3",

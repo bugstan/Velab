@@ -902,8 +902,14 @@ export default function Home() {
     }
   };
 
-  const handleSend = async (message: string) => {
+  const handleSend = async (message: string, scenarioId?: string) => {
     if (isRunning) return;
+    // 若预设问题指定了场景，自动切换
+    const effectiveScenarioId = scenarioId ?? currentScenario.id;
+    if (scenarioId && scenarioId !== currentScenario.id) {
+      const target = DEMO_SCENARIOS.find((s) => s.id === scenarioId);
+      if (target) setCurrentScenario(target);
+    }
     shouldAutoScrollRef.current = true;
     const targetSessionId = ensureActiveSession();
     const currentSnapshot = getConversationSnapshot(targetSessionId);
@@ -1075,7 +1081,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
-          scenarioId: currentScenario.id,
+          scenarioId: effectiveScenarioId,
           history: historyPayload,
         }),
         signal: abortController.signal,

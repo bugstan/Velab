@@ -58,10 +58,9 @@ export default function InputBar({ onSend, isRunning, onStop, onUploadFiles }: I
           alignItems: "center",
           gap: "8px",
           borderRadius: "16px",
-          border: "1px solid var(--border-color)",
+          border: isDragging ? "1px solid var(--accent-blue)" : "1px solid var(--border-color)",
           background: "var(--bg-input)",
           padding: "8px 12px",
-          border: isDragging ? "1px solid var(--accent-blue)" : "1px solid var(--border-color)",
         }}
       >
         <input
