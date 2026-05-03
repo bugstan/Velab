@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import struct
 import zipfile
 import zlib
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from log_pipeline.ingest.extractor import Extractor, _fix_zip_name
+from log_pipeline.ingest.extractor import Extractor, _UPLOAD_PREFIX_RE, _fix_zip_name
 
 
 def test_fix_zip_name_decodes_gbk_when_utf8_flag_unset():
@@ -168,3 +170,165 @@ def test_extractor_recurses_into_nested_zip(tmp_path: Path, work_root: Path):
     assert by_rel["top/wrap.zip/deep/a.log"].nested_depth == 1
     assert by_rel["top/wrap.zip/deep/a.log"].temp_path.read_bytes() == b"AAA"
     assert by_rel["top/note.txt"].nested_depth == 0
+
+
+# ---------------------------------------------------------------------------
+# _UPLOAD_PREFIX_RE — UUID prefix stripping
+# ---------------------------------------------------------------------------
+
+def test_upload_prefix_re_strips_uuid_prefix():
+    uuid_part = "a" * 32
+    assert _UPLOAD_PREFIX_RE.sub("", f"{uuid_part}__fota.log") == "fota.log"
+
+
+def test_upload_prefix_re_strips_mixed_hex_uuid():
+    uuid_part = "0a1b2c3d4e5f6789abcdef0123456789"
+    assert _UPLOAD_PREFIX_RE.sub("", f"{uuid_part}__system.log") == "system.log"
+
+
+def test_upload_prefix_re_passthrough_no_prefix():
+    assert _UPLOAD_PREFIX_RE.sub("", "fota_2025.log") == "fota_2025.log"
+
+
+def test_upload_prefix_re_does_not_strip_short_hex_prefix():
+    # 31 hex chars + __ is NOT a full UUID prefix — must NOT strip
+    short = "a" * 31 + "__fota.log"
+    assert _UPLOAD_PREFIX_RE.sub("", short) == short
+
+
+# ---------------------------------------------------------------------------
+# _extract_plain — single file passthrough
+# ---------------------------------------------------------------------------
+
+def test_extractor_plain_log_file(tmp_path: Path, work_root: Path):
+    f = tmp_path / "sysdump.log"
+    f.write_bytes(b"line1\nline2\n")
+    files = list(Extractor(work_root).extract(f))
+    assert len(files) == 1
+    assert files[0].relative_path == "sysdump.log"
+    assert files[0].temp_path.read_bytes() == b"line1\nline2\n"
+    assert files[0].nested_depth == 0
+
+
+def test_extractor_plain_strips_uuid_prefix(tmp_path: Path, work_root: Path):
+    uuid_part = "b" * 32
+    stored = tmp_path / f"{uuid_part}__fota_2025-09-12.log"
+    stored.write_bytes(b"fota log content")
+    files = list(Extractor(work_root).extract(stored))
+    assert len(files) == 1
+    assert files[0].relative_path == "fota_2025-09-12.log"
+    assert files[0].temp_path.read_bytes() == b"fota log content"
+
+
+def test_extractor_plain_no_uuid_prefix_preserved(tmp_path: Path, work_root: Path):
+    f = tmp_path / "plain_name.txt"
+    f.write_bytes(b"some text")
+    files = list(Extractor(work_root).extract(f))
+    assert files[0].relative_path == "plain_name.txt"
+
+
+def test_extractor_plain_dlt_file(tmp_path: Path, work_root: Path):
+    f = tmp_path / "trace.dlt"
+    f.write_bytes(b"\x44\x4c\x54\x01binary dlt content")
+    files = list(Extractor(work_root).extract(f))
+    assert len(files) == 1
+    assert files[0].relative_path == "trace.dlt"
+
+
+# ---------------------------------------------------------------------------
+# _extract_rar — RAR extraction (rarfile.RarFile mocked)
+# ---------------------------------------------------------------------------
+
+def _fake_rf_ctx(infolist, file_contents: dict[str, bytes]) -> MagicMock:
+    """Build a context-manager mock for rarfile.RarFile."""
+    rf = MagicMock()
+    rf.infolist.return_value = infolist
+
+    def _open(info):
+        cm = MagicMock()
+        cm.__enter__ = lambda s: io.BytesIO(file_contents.get(info.filename, b""))
+        cm.__exit__ = MagicMock(return_value=False)
+        return cm
+
+    rf.open.side_effect = _open
+    rf.__enter__ = lambda s: rf
+    rf.__exit__ = MagicMock(return_value=False)
+    return rf
+
+
+def _make_rar_info(filename: str, is_dir: bool = False) -> MagicMock:
+    info = MagicMock()
+    info.filename = filename
+    info.is_dir.return_value = is_dir
+    return info
+
+
+def test_extractor_rar_basic(tmp_path: Path, work_root: Path):
+    content = b"ECU update log line"
+    fake_info = _make_rar_info("logs/ecu.log")
+    rf = _fake_rf_ctx([fake_info], {"logs/ecu.log": content})
+
+    archive = tmp_path / "test.rar"
+    archive.write_bytes(b"placeholder")
+
+    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+        files = list(Extractor(work_root).extract(archive))
+
+    assert len(files) == 1
+    assert files[0].relative_path == "logs/ecu.log"
+    assert files[0].temp_path.read_bytes() == content
+    assert files[0].nested_depth == 0
+
+
+def test_extractor_rar_skips_directory_entries(tmp_path: Path, work_root: Path):
+    dir_info = _make_rar_info("logs/", is_dir=True)
+    file_info = _make_rar_info("logs/fota.log")
+    rf = _fake_rf_ctx([dir_info, file_info], {"logs/fota.log": b"x"})
+
+    archive = tmp_path / "dirs.rar"
+    archive.write_bytes(b"placeholder")
+
+    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+        files = list(Extractor(work_root).extract(archive))
+
+    rels = [f.relative_path for f in files]
+    assert "logs/" not in rels
+    assert "logs/fota.log" in rels
+
+
+def test_extractor_rar_normalizes_windows_backslash_paths(tmp_path: Path, work_root: Path):
+    content = b"win content"
+    fake_info = _make_rar_info("a\\b\\c.log")  # Windows-style paths from WinRAR
+    rf = _fake_rf_ctx([fake_info], {"a\\b\\c.log": content})
+
+    archive = tmp_path / "win.rar"
+    archive.write_bytes(b"placeholder")
+
+    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+        files = list(Extractor(work_root).extract(archive))
+
+    assert len(files) == 1
+    assert files[0].relative_path == "a/b/c.log"
+
+
+def test_extractor_rar_nested_zip_expands(tmp_path: Path, work_root: Path):
+    """RAR containing a .zip is recursively expanded."""
+    inner = tmp_path / "inner.zip"
+    _make_zip(inner, {"deep/data.log": b"DEEP"})
+    zip_bytes = inner.read_bytes()
+
+    fake_info = _make_rar_info("wrap.zip")
+    rf = _fake_rf_ctx([fake_info], {"wrap.zip": zip_bytes})
+
+    archive = tmp_path / "outer.rar"
+    archive.write_bytes(b"placeholder")
+
+    with patch("log_pipeline.ingest.extractor.rarfile.RarFile", return_value=rf):
+        files = list(Extractor(work_root).extract(archive))
+
+    rels = [f.relative_path for f in files]
+    assert "wrap.zip/deep/data.log" in rels
+    nested = next(f for f in files if f.relative_path == "wrap.zip/deep/data.log")
+    assert nested.nested_depth == 1
+    assert nested.temp_path.read_bytes() == b"DEEP"
+

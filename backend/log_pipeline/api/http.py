@@ -30,6 +30,8 @@ from log_pipeline.storage.filestore import FileStore
 logger = logging.getLogger(__name__)
 
 _UPLOAD_CHUNK = 1 << 20  # 1 MiB
+_PLAIN_SUFFIXES = frozenset({".log", ".txt", ".dlt"})
+_ARCHIVE_SUFFIXES = frozenset({".zip", ".gz", ".tgz", ".rar"})
 
 
 def build_pipeline(settings: Settings) -> IngestPipeline:
@@ -92,12 +94,14 @@ async def upload_bundle(
         return _error("MISSING_FILENAME", "file has no filename", 400)
 
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in {".zip", ".gz", ".tgz"} and not file.filename.lower().endswith(
+    _is_archive = suffix in _ARCHIVE_SUFFIXES or file.filename.lower().endswith(
         (".tar.gz", ".tar")
-    ):
+    )
+    _is_plain = suffix in _PLAIN_SUFFIXES
+    if not _is_archive and not _is_plain:
         return _error(
-            "UNSUPPORTED_ARCHIVE",
-            f"only .zip / .tar.gz / .tgz / .tar accepted (got {file.filename!r})",
+            "UNSUPPORTED_FORMAT",
+            f"accepted: .zip / .tar.gz / .tgz / .tar / .rar / .log / .txt / .dlt (got {file.filename!r})",
             400,
         )
 

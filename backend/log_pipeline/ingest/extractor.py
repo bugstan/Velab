@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import shutil
 import tarfile
 import tempfile
@@ -12,13 +13,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
+import rarfile
+
 logger = logging.getLogger(__name__)
 
 _CHUNK = 1 << 20  # 1 MiB streaming chunk
 _NESTED_ZIP_MAX_DEPTH = 5
 _SKIP_NAMES = {".DS_Store"}
 _SKIP_PREFIXES = ("__MACOSX/",)
-_NESTED_ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar")
+_NESTED_ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar", ".rar")
+# Upload paths are stored as ``{32-hex-uuid}__{original_name}``; strip this
+# prefix so the classifier sees the real filename.
+_UPLOAD_PREFIX_RE = re.compile(r'^[0-9a-f]{32}__')
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,11 @@ def _should_skip(name: str) -> bool:
     if not name or name.endswith("/"):
         return True
     if any(name.startswith(p) for p in _SKIP_PREFIXES):
+        return True
+    # 拦截路径遍历：禁止 ".." 分量和绝对路径
+    parts = name.replace("\\", "/").split("/")
+    if ".." in parts or name.startswith("/"):
+        logger.warning("Skipping path traversal member: %r", name)
         return True
     base = name.rsplit("/", 1)[-1]
     if base in _SKIP_NAMES:
@@ -122,8 +133,11 @@ class Extractor:
             yield from self._extract_zip(archive_path, work_dir, depth, source_archive)
         elif name.endswith((".tar.gz", ".tgz", ".tar")) or suffix in {".gz"}:
             yield from self._extract_tar(archive_path, work_dir, depth, source_archive)
+        elif suffix == ".rar":
+            yield from self._extract_rar(archive_path, work_dir, depth, source_archive)
         else:
-            raise ValueError(f"unsupported archive format: {archive_path}")
+            # Plain file (e.g. .log / .txt / .dlt): treat as a single-file bundle.
+            yield from self._extract_plain(archive_path, work_dir, source_archive)
 
     def _extract_zip(
         self,
@@ -210,6 +224,71 @@ class Extractor:
                         nested_depth=depth,
                         source_archive=source_archive,
                     )
+
+    def _extract_rar(
+        self,
+        archive_path: Path,
+        work_dir: Path,
+        depth: int,
+        source_archive: Optional[str],
+    ) -> Iterator[ExtractedFile]:
+        with rarfile.RarFile(str(archive_path)) as rf:
+            for info in rf.infolist():
+                if info.is_dir():
+                    continue
+                name = info.filename.replace("\\", "/")
+                if _should_skip(name):
+                    continue
+                target = work_dir / name
+                with rf.open(info) as src:
+                    written, digest = _atomic_stream_copy(src, target)
+                if _is_nested_archive(name) and depth < _NESTED_ZIP_MAX_DEPTH:
+                    nested_dir = work_dir / (name + ".__expanded__")
+                    nested_dir.mkdir(parents=True, exist_ok=True)
+                    for inner in self._extract_into(
+                        target, nested_dir, depth + 1, source_archive=name
+                    ):
+                        yield ExtractedFile(
+                            relative_path=f"{name}/{inner.relative_path}",
+                            temp_path=inner.temp_path,
+                            size=inner.size,
+                            sha256=inner.sha256,
+                            nested_depth=inner.nested_depth,
+                            source_archive=name,
+                        )
+                else:
+                    yield ExtractedFile(
+                        relative_path=name,
+                        temp_path=target,
+                        size=written,
+                        sha256=digest,
+                        nested_depth=depth,
+                        source_archive=source_archive,
+                    )
+
+    def _extract_plain(
+        self,
+        file_path: Path,
+        work_dir: Path,
+        source_archive: Optional[str],
+    ) -> Iterator[ExtractedFile]:
+        """Passthrough for a single non-archive file (e.g. .log / .txt / .dlt).
+
+        The on-disk name may have an ``{uuid32}__`` upload prefix; strip it so
+        the classifier sees the original filename.
+        """
+        original_name = _UPLOAD_PREFIX_RE.sub("", file_path.name)
+        target = work_dir / original_name
+        with open(file_path, "rb") as src:
+            written, digest = _atomic_stream_copy(src, target)
+        yield ExtractedFile(
+            relative_path=original_name,
+            temp_path=target,
+            size=written,
+            sha256=digest,
+            nested_depth=0,
+            source_archive=source_archive,
+        )
 
     def cleanup(self, work_dir: Path) -> None:
         shutil.rmtree(work_dir, ignore_errors=True)
