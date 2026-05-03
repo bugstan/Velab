@@ -54,6 +54,12 @@
   - `npm run test:ui` - 可视化测试界面
 - **检查**: `npm run lint`
 
+### 发 PR 前（必须）
+- **本地 CI 验证**: `bash scripts/test-ci.sh`
+  复刻完整 CI 流程（PostgreSQL + Redis 前置检查 → flake8 → pytest → eslint → vitest）
+  看到 `✅ 本地 CI 全部通过，可以提交 PR！` 后再推送
+- **一键启动**: `bash scripts/dev.sh`（自动停旧进程 + 按 DEPLOYMENT_MODE 决定是否启动 Gateway）
+
 ## 编码与设计规范
 
 ### 1. 通用规则
@@ -104,3 +110,11 @@
 - 演示日志扩充至 5 份，Jira 工单扩充至 10 个
 - `vitest.config.ts` 添加覆盖率 thresholds（branches≥70%, functions≥70%, lines≥80%, statements≥80%）
 - 总体进度 80% → 93%
+
+### 2026-05-03: 安全加固 + CI 修复 + 开发工具链
+- **安全修复**: `ChatMessage.tsx` 新增 `escapeHtml()`/`sanitizeUrl()` 防 XSS；`chat/route.ts` 添加输入验证；`next.config.ts` 添加 5 个安全响应头；`main.py` CORS 收窄为 `ALLOWED_ORIGINS` 环境变量
+- **依赖**: `npm audit fix` 修复 Vite 3 个 HIGH CVE；`package.json overrides` 强制 postcss ≥ 8.5.10，`npm audit` 输出 0 vulnerabilities
+- **scripts/dev.sh**: 一键启动脚本，启动前自动清理旧进程（SIGTERM→SIGKILL），按 `DEPLOYMENT_MODE` 智能决定是否启动 LiteLLM Gateway
+- **CI 修复**: `ci.yml` 补全 `POSTGRES_DB` 等环境变量；新增 Redis 7 service；flake8 增加 `--exclude=venv,.venv`
+- **scripts/test-ci.sh**: 本地 CI 模拟脚本，**发 PR 前必须先跑**，看到绿色通过提示再推送
+- **Copilot Skills**: `.agents/skills/` 25 个 + `.github/agents/` 3 个 Persona + `.github/copilot-instructions.md`
